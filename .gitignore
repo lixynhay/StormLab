@@ -1,0 +1,10 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.log
+data/
+.idea/
+.vscode/
+ai_coder.py
