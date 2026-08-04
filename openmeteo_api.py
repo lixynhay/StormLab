@@ -1,19 +1,15 @@
-"""
-Open-Meteo API клиент с Circuit Breaker и кэшированием.
-"""
 import logging
 import time
 from datetime import datetime
 
 import requests
+from storm_indices import SKEWT_LEVELS
 
 from config import API_RETRY_ATTEMPTS, API_RETRY_DELAY, API_TIMEOUT, DEFAULT_LAT, DEFAULT_LON
 
 logger = logging.getLogger(__name__)
 
-
 class CircuitBreaker:
-    """Circuit Breaker: если API упал 3 раза, не дёргать 5 минут."""
     def __init__(self, failure_threshold=3, reset_timeout=300):
         self.failure_count = 0
         self.failure_threshold = failure_threshold
@@ -66,7 +62,6 @@ class OpenMeteoAPI:
         return 300
 
     def _cleanup_cache(self):
-        """Агрессивная очистка: удаляет истёкшие + лишние записи (LRU)."""
         now = datetime.now()
         expired_keys = []
 
@@ -80,14 +75,12 @@ class OpenMeteoAPI:
             del self._cache_timestamps[key]
             logger.debug(f"Cache expired: {key}")
 
-        # Если после удаления истёкших всё ещё превышаем лимит — удаляем самые старые
         if len(self._cache) > self._max_cache_size:
             excess = len(self._cache) - self._max_cache_size
-            # Удаляем все записи старше лимита, а не только 5
             sorted_keys = sorted(
                 self._cache_timestamps.keys(), key=lambda k: self._cache_timestamps[k]
             )
-            for key in sorted_keys[:excess + 5]:  # +5 для запаса
+            for key in sorted_keys[:excess + 5]:
                 if key in self._cache:
                     del self._cache[key]
                     del self._cache_timestamps[key]
@@ -192,13 +185,6 @@ class OpenMeteoAPI:
         return self._make_request(params, cache_key, lat, lon)
 
     def get_current(self, lat: float, lon: float) -> dict:
-        """
-        Возвращает {'current': {...}} с приземными данными.
-
-        FIX: Open-Meteo НЕ отдаёт cape/lifted_index в current endpoint.
-        CAPE доступен только в hourly (параметр cape) — но он нестабилен.
-        Убрали cape/lifted_index из запроса — они всё равно всегда None.
-        """
         params = {
             "latitude": lat,
             "longitude": lon,
@@ -212,20 +198,17 @@ class OpenMeteoAPI:
         return self._make_request(params, cache_key, lat, lon)
 
     def get_pressure_levels(self, lat=None, lon=None):
+        hourly_vars = ["surface_pressure"]
+        for lvl in SKEWT_LEVELS:
+            hourly_vars.extend([
+                f"temperature_{lvl}hPa",
+                f"dew_point_{lvl}hPa",
+                f"wind_speed_{lvl}hPa",
+                f"wind_direction_{lvl}hPa"
+            ])
+
         params = {
-            "hourly": [
-                "temperature_1000hPa", "temperature_925hPa", "temperature_850hPa",
-                "temperature_700hPa", "temperature_500hPa", "temperature_300hPa",
-                "dew_point_1000hPa", "dew_point_925hPa", "dew_point_850hPa",
-                "dew_point_700hPa", "dew_point_500hPa", "dew_point_300hPa",
-                # FIX: добавлены 300hPa ветер (Open-Meteo поддерживает wind_speed_300hPa)
-                "wind_speed_1000hPa", "wind_speed_925hPa", "wind_speed_850hPa",
-                "wind_speed_700hPa", "wind_speed_500hPa", "wind_speed_300hPa",
-                "wind_direction_1000hPa", "wind_direction_925hPa",
-                "wind_direction_850hPa", "wind_direction_700hPa",
-                "wind_direction_500hPa", "wind_direction_300hPa",
-                "surface_pressure",
-            ],
+            "hourly": ",".join(hourly_vars),
             "temperature_unit": "celsius",
             "wind_speed_unit": "ms",
             "timezone": "UTC",

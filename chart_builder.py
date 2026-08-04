@@ -7,7 +7,7 @@ import numpy as np
 import metpy.calc as mpcalc
 from metpy.plots import SkewT
 from metpy.units import units
-from storm_indices import PRESSURE_LEVELS
+from storm_indices import SKEWT_LEVELS
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def build_profile_chart(pressure_data: dict, city: str, time_label: str) -> io.B
             speeds.append(float(surface_speed))
             dirs.append(float(surface_dir))
         
-        for lvl in PRESSURE_LEVELS:
+        for lvl in SKEWT_LEVELS:
             if surface_pressure is not None and lvl >= surface_pressure:
                 continue
             t = hourly.get(f"temperature_{lvl}hPa", [None])[0]

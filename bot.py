@@ -153,30 +153,7 @@ async def _send_storm_report(message_target, lat, lon, city, time_index, time_la
         "report": report, "city": city, "time_label": time_label,
         "current": current_data["current"], "pressure": pressure_data["hourly"]
     }
-    hourly = pressure_data.get("hourly", {})
-    time_idx = time_index
-    pressures = []
-    temps = []
-    dews = []
-    winds = []
-    dirs = []
-    levels = [1000, 925, 850, 700, 500, 400, 300, 250, 200]
-    for lvl in levels:
-        t_key = f"temperature_{lvl}hPa"
-        td_key = f"dew_point_{lvl}hPa"
-        w_key = f"wind_speed_{lvl}hPa"
-        d_key = f"wind_direction_{lvl}hPa"
-        if t_key in hourly and len(hourly[t_key]) > time_idx:
-            t_val = hourly[t_key][time_idx]
-            td_val = hourly.get(td_key, [None]*(time_idx+1))[time_idx]
-            w_val = hourly.get(w_key, [None]*(time_idx+1))[time_idx]
-            d_val = hourly.get(d_key, [None]*(time_idx+1))[time_idx]
-            if t_val is not None:
-                pressures.append(lvl)
-                temps.append(t_val)
-                dews.append(td_val if td_val is not None else t_val - 5)
-                winds.append(w_val if w_val is not None else 0)
-                dirs.append(d_val if d_val is not None else 0)
+
     chart = build_profile_chart(pressure_data, city, time_label)
     if chart is not None:
         await message_target.reply_photo(photo=chart)
