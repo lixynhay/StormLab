@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 MAX_COMPARE_KM = 1500
 
 _STATIONS_CACHE = {"ts": 0.0, "df": None, "ttl": 0.0}
-_SOUNDING_CACHE = {}          # (wmo, time_iso) -> df
-_SOUNDING_TS = {}             # (wmo, time_iso) -> timestamp
-_PROBE_CACHE = {}             # (lat_r, lon_r) -> (ts, probe_list)
+_SOUNDING_CACHE = {}
+_SOUNDING_TS = {}
+_PROBE_CACHE = {}
 _PROBE_TTL = 1800
 _SOUNDING_TTL = 3600
 _FALLBACK_STATIONS = [

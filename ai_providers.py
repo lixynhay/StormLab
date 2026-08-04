@@ -239,12 +239,6 @@ def build_provider_chain():
             base_url="https://api.groq.com/openai/v1",
             model="llama-3.3-70b-versatile",
         ))
-        chain.append(OpenAICompatProvider(
-            name="Groq-8B",
-            api_key=GROQ_API_KEY,
-            base_url="https://api.groq.com/openai/v1",
-            model="llama-3.1-8b-instant",
-        ))
     
     if GITHUB_TOKEN:
         chain.append(OpenAICompatProvider(
