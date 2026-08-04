@@ -6,6 +6,7 @@ from metpy.units import units
 logger = logging.getLogger(__name__)
 
 PRESSURE_LEVELS = [1000, 925, 850, 700, 500, 300]
+SKEWT_LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300]
 
 def interpret_cin(cin_value):
     cin_abs = abs(cin_value) if cin_value is not None else 0
