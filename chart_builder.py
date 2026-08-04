@@ -11,21 +11,19 @@ from storm_indices import PRESSURE_LEVELS
 
 logger = logging.getLogger(__name__)
 
-# Цветовая палитра Dark Mode
-FIG_BG = "#0B132B"          # Внешний фон
-AX_BG = "#101424"           # Фон графика
-TEXT_COLOR = "#FFFFFF"      # Основной текст
-GRID_COLOR = "#3A4764"      # Сетка
-TEMP_LINE = "#FF4D4D"       # Температура (Ярко-красный)
-DEW_LINE = "#00E5FF"        # Точка росы (Ярко-голубой)
-PARCEL_LINE = "#FFEA00"     # Линия парцеля (Неоново-желтый)
+FIG_BG = "#0B132B"
+AX_BG = "#101424"
+TEXT_COLOR = "#FFFFFF"
+GRID_COLOR = "#3A4764"
+TEMP_LINE = "#FF4D4D"
+DEW_LINE = "#00E5FF"
+PARCEL_LINE = "#FFEA00"
 
 
 def build_profile_chart(pressure_data: dict, city: str, time_label: str) -> io.BytesIO | None:
     try:
         hourly = pressure_data.get("hourly", {})
         
-        # Извлечение данных (0-й индекс, так как данные уже нарезаны в bot.py)
         surface_pressure = hourly.get("surface_pressure", [None])[0]
         surface_temp = hourly.get("temperature_2m", [None])[0]
         surface_dewpoint = hourly.get("dew_point_2m", [None])[0]
@@ -35,7 +33,6 @@ def build_profile_chart(pressure_data: dict, city: str, time_label: str) -> io.B
         temp_pressures, temps, dews = [], [], []
         pressures, speeds, dirs = [], [], []
         
-        # Добавление приземных данных
         if all(v is not None for v in [surface_pressure, surface_temp, surface_dewpoint]):
             temp_pressures.append(float(surface_pressure))
             temps.append(float(surface_temp))
@@ -46,7 +43,6 @@ def build_profile_chart(pressure_data: dict, city: str, time_label: str) -> io.B
             speeds.append(float(surface_speed))
             dirs.append(float(surface_dir))
         
-        # Сбор данных по уровням давления
         for lvl in PRESSURE_LEVELS:
             if surface_pressure is not None and lvl >= surface_pressure:
                 continue
@@ -69,39 +65,32 @@ def build_profile_chart(pressure_data: dict, city: str, time_label: str) -> io.B
             logger.warning("Недостаточно данных для построения графика профиля")
             return None
         
-        # Конвертация в объекты MetPy
         p = np.array(temp_pressures) * units.hPa
         T = np.array(temps) * units.degC
         Td = np.array(dews) * units.degC
         
-        # Создание фигуры
         fig = plt.figure(figsize=(9, 11), facecolor=FIG_BG)
         skew = SkewT(fig, rotation=45)
         ax = skew.ax
         ax.set_facecolor(AX_BG)
         
-        # Настройка сетки и осей
         ax.grid(True, which='both', color=GRID_COLOR, linestyle='-', alpha=0.5, linewidth=0.7)
         ax.tick_params(axis='both', colors=TEXT_COLOR, labelsize=10)
         for side in ['bottom', 'top', 'left', 'right']:
             ax.spines[side].set_color(GRID_COLOR)
         
-        # Отрисовка основных линий
         skew.plot(p, T, TEMP_LINE, linewidth=3, label="Температура", zorder=5)
         skew.plot(p, Td, DEW_LINE, linewidth=3, label="Точка росы", zorder=4)
         
-        # Расчет и отрисовка парцеля
         try:
             parcel_prof = mpcalc.parcel_profile(p, T[0], Td[0]).to("degC")
             skew.plot(p, parcel_prof, PARCEL_LINE, linestyle="--", linewidth=2, label="Парцель", zorder=6)
             
-            # Мягкое затенение CAPE и CIN
             skew.shade_cape(p, T, parcel_prof, facecolor='red', alpha=0.15, label="CAPE")
             skew.shade_cin(p, T, parcel_prof, Td, facecolor='deepskyblue', alpha=0.15, label="CIN")
         except Exception as e:
             logger.warning(f"Не удалось построить линию парцеля: {e}")
         
-        # Отрисовка ветра (белые стрелки для контраста)
         try:
             if len(pressures) >= 2:
                 wind_p = np.array(pressures) * units.hPa
@@ -112,29 +101,24 @@ def build_profile_chart(pressure_data: dict, city: str, time_label: str) -> io.B
         except Exception as e:
             logger.warning(f"Не удалось нарисовать ветровые barbs: {e}")
         
-        # Настройка лимитов и подписей
         ax.set_ylim(1030, 300)
         ax.set_xlim(-40, 45)
         ax.set_xlabel("Температура (°C)", color=TEXT_COLOR, fontsize=12, fontweight='bold', labelpad=10)
         ax.set_ylabel("Давление (гПа)", color=TEXT_COLOR, fontsize=12, fontweight='bold', labelpad=10)
         
-        # Заголовок
         ax.set_title(f"{city.upper()}\nВертикальный профиль ({time_label})", 
                      fontsize=14, fontweight="bold", color=TEXT_COLOR, pad=20)
         
-        # Легенда
         leg = ax.legend(fontsize=10, loc="upper right", frameon=True, facecolor=AX_BG, edgecolor=GRID_COLOR)
         for text in leg.get_texts():
             text.set_color(TEXT_COLOR)
         
-        # Отрисовка вспомогательных линий (адиабаты) - делаем их очень тонкими
         skew.plot_dry_adiabats(linewidth=0.6, alpha=0.2, color='white')
         skew.plot_moist_adiabats(linewidth=0.6, alpha=0.2, color='white')
         skew.plot_mixing_lines(linewidth=0.6, alpha=0.2, color='white')
         
         fig.tight_layout()
         
-        # Сохранение в буфер с высоким DPI
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=200, facecolor=FIG_BG, bbox_inches='tight')
         plt.close(fig)

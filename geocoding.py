@@ -9,11 +9,6 @@ _GEO_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
 
 def resolve_city(query: str):
-    """
-    Превращает название города в (lat, lon, display_name).
-    Возвращает None, если город не найден или сеть недоступна.
-    Результат кэшируется в памяти (координаты городов не меняются).
-    """
     if not query:
         return None
 

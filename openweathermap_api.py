@@ -18,13 +18,6 @@ class OpenWeatherMapAPI:
         self.base_url = "https://api.openweathermap.org/data/2.5/weather"
 
     def get_current(self, lat: float, lon: float) -> dict | None:
-        """
-        Возвращает словарь с полями в тех же именах/единицах, что и
-        OpenMeteoAPI.get_current()['current'], чтобы слияние в data_fusion.py
-        было прямым сопоставлением ключ-в-ключ. Возвращает None при любой
-        проблеме (нет ключа, сеть недоступна, попытки исчерпаны и т.п.) —
-        это НЕ исключение, вызывающий код просто продолжает работать без OWM.
-        """
         if not OPENWEATHERMAP_API_KEY:
             logger.debug("OPENWEATHERMAP_API_KEY не настроен, пропускаю запрос к OWM")
             return None

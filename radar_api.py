@@ -8,24 +8,17 @@ logger = logging.getLogger(__name__)
 RAVIEWER_API_URL = "https://api.rainviewer.com/public/weather-maps.json"
 TILE_BASE_URL = "https://tilecache.rainviewer.com"
 
-# Кэш состояния API (чтобы не дёргать его каждый раз)
 _cache = {
     "last_check": 0,
     "is_valid": False,
     "last_valid_path": None,
     "last_valid_time": None,
-    "ttl": 300  # 5 минут
+    "ttl": 300
 }
 
 def get_latest_radar_frame(force_check=False):
-    """
-    Запрашивает у RainViewer список снимков и возвращает путь к последнему ВАЛИДНОму.
-    Кэширует результат на 5 минут, чтобы не спамить API.
-    Возвращает (path, timestamp_utc, is_cached)
-    """
     now = time.time()
     
-    # Если кэш ещё валиден и не принудительная проверка — возвращаем кэш
     if not force_check and (now - _cache["last_check"]) < _cache["ttl"]:
         if _cache["is_valid"]:
             logger.info(f"RainViewer: используем кэш ({_cache['last_valid_path']})")
@@ -47,14 +40,12 @@ def get_latest_radar_frame(force_check=False):
             _cache["last_check"] = now
             return None, None, False
 
-        # Ищем первый валидный путь (с минимум 4 слэшами)
         for frame in reversed(past_frames):
             path = frame.get("path", "")
             if path.count('/') >= 4:
                 timestamp_unix = frame["time"]
                 dt_utc = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc)
                 
-                # Обновляем кэш
                 _cache["is_valid"] = True
                 _cache["last_valid_path"] = path
                 _cache["last_valid_time"] = dt_utc
@@ -63,7 +54,6 @@ def get_latest_radar_frame(force_check=False):
                 logger.info(f"RainViewer: найден валидный фрейм {path}")
                 return path, dt_utc, False
         
-        # Все пути — мусор
         logger.warning("RainViewer: API временно отдает только заглушки")
         _cache["is_valid"] = False
         _cache["last_check"] = now
@@ -76,9 +66,7 @@ def get_latest_radar_frame(force_check=False):
         return None, None, False
 
 def is_radar_available():
-    """Быстрая проверка без запроса к API (использует кэш)."""
     now = time.time()
     if (now - _cache["last_check"]) >= _cache["ttl"]:
-        # Кэш устарел, делаем быструю проверку
         get_latest_radar_frame()
     return _cache["is_valid"]

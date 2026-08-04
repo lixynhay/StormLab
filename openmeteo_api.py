@@ -1,3 +1,6 @@
+"""
+Open-Meteo API клиент с Circuit Breaker и кэшированием.
+"""
 import logging
 import time
 from datetime import datetime
@@ -9,7 +12,6 @@ from config import API_RETRY_ATTEMPTS, API_RETRY_DELAY, API_TIMEOUT, DEFAULT_LAT
 logger = logging.getLogger(__name__)
 
 
-
 class CircuitBreaker:
     """Circuit Breaker: если API упал 3 раза, не дёргать 5 минут."""
     def __init__(self, failure_threshold=3, reset_timeout=300):
@@ -18,7 +20,7 @@ class CircuitBreaker:
         self.reset_timeout = reset_timeout
         self.last_failure_time = 0
         self.is_open = False
-    
+
     def call(self, func, *args, **kwargs):
         if self.is_open:
             if time.time() - self.last_failure_time < self.reset_timeout:
@@ -26,7 +28,7 @@ class CircuitBreaker:
             else:
                 self.is_open = False
                 self.failure_count = 0
-        
+
         try:
             result = func(*args, **kwargs)
             self.failure_count = 0
@@ -38,6 +40,7 @@ class CircuitBreaker:
                 self.is_open = True
                 logger.warning(f"Circuit breaker OPEN after {self.failure_count} failures")
             raise
+
 
 class OpenMeteoAPI:
     def __init__(self):
@@ -55,14 +58,20 @@ class OpenMeteoAPI:
         }
         self._max_cache_size = 50
 
+    def _cache_ttl_for(self, full_key: str) -> int:
+        """Resolve TTL for a full cache key like 'pressure_levels_59.7_60.0'."""
+        for name, ttl in self._cache_ttl.items():
+            if full_key == name or full_key.startswith(name + "_"):
+                return ttl
+        return 300
+
     def _cleanup_cache(self):
+        """Агрессивная очистка: удаляет истёкшие + лишние записи (LRU)."""
         now = datetime.now()
         expired_keys = []
 
         for key, timestamp in list(self._cache_timestamps.items()):
-            cache_type = key.split("_")[0] if "_" in key else "current"
-            ttl = self._cache_ttl.get(cache_type, 300)
-
+            ttl = self._cache_ttl_for(key)
             if (now - timestamp).total_seconds() >= ttl:
                 expired_keys.append(key)
 
@@ -71,13 +80,19 @@ class OpenMeteoAPI:
             del self._cache_timestamps[key]
             logger.debug(f"Cache expired: {key}")
 
+        # Если после удаления истёкших всё ещё превышаем лимит — удаляем самые старые
         if len(self._cache) > self._max_cache_size:
-            oldest_keys = sorted(
+            excess = len(self._cache) - self._max_cache_size
+            # Удаляем все записи старше лимита, а не только 5
+            sorted_keys = sorted(
                 self._cache_timestamps.keys(), key=lambda k: self._cache_timestamps[k]
-            )[:5]
-            for key in oldest_keys:
-                del self._cache[key]
-                del self._cache_timestamps[key]
+            )
+            for key in sorted_keys[:excess + 5]:  # +5 для запаса
+                if key in self._cache:
+                    del self._cache[key]
+                    del self._cache_timestamps[key]
+            logger.info(f"Cache pruned: removed {excess + 5} oldest entries, "
+                        f"current size: {len(self._cache)}")
 
     def _make_request(self, params, cache_key=None, lat=None, lon=None):
         if lat is not None:
@@ -88,8 +103,7 @@ class OpenMeteoAPI:
         if cache_key:
             full_key = f"{cache_key}_{params.get('latitude', '')}_{params.get('longitude', '')}"
             if full_key in self._cache:
-                cache_type = cache_key.split("_")[0] if "_" in cache_key else "current"
-                ttl = self._cache_ttl.get(cache_type, 300)
+                ttl = self._cache_ttl_for(full_key)
                 age = (
                     datetime.now() - self._cache_timestamps.get(full_key, datetime.min)
                 ).total_seconds()
@@ -112,6 +126,7 @@ class OpenMeteoAPI:
 
                 if response.status_code == 429:
                     retry_after = int(response.headers.get("Retry-After", 5))
+                    retry_after = min(retry_after, 30)  # cap retry_after
                     logger.warning(f"Rate limited, waiting {retry_after}s")
                     time.sleep(retry_after)
                     continue
@@ -177,13 +192,19 @@ class OpenMeteoAPI:
         return self._make_request(params, cache_key, lat, lon)
 
     def get_current(self, lat: float, lon: float) -> dict:
-        """Возвращает {'current': {...}} с добавленными индексами CAPE и LI"""
+        """
+        Возвращает {'current': {...}} с приземными данными.
+
+        FIX: Open-Meteo НЕ отдаёт cape/lifted_index в current endpoint.
+        CAPE доступен только в hourly (параметр cape) — но он нестабилен.
+        Убрали cape/lifted_index из запроса — они всё равно всегда None.
+        """
         params = {
             "latitude": lat,
             "longitude": lon,
             "current": "temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,"
                        "precipitation,weather_code,cloud_cover,surface_pressure,"
-                       "wind_speed_10m,wind_direction_10m,cape,lifted_index", # <-- ДОБАВИЛИ CAPE И LI
+                       "wind_speed_10m,wind_direction_10m",
             "timezone": "UTC"
         }
 
@@ -197,10 +218,12 @@ class OpenMeteoAPI:
                 "temperature_700hPa", "temperature_500hPa", "temperature_300hPa",
                 "dew_point_1000hPa", "dew_point_925hPa", "dew_point_850hPa",
                 "dew_point_700hPa", "dew_point_500hPa", "dew_point_300hPa",
+                # FIX: добавлены 300hPa ветер (Open-Meteo поддерживает wind_speed_300hPa)
                 "wind_speed_1000hPa", "wind_speed_925hPa", "wind_speed_850hPa",
-                "wind_speed_700hPa", "wind_speed_500hPa",
+                "wind_speed_700hPa", "wind_speed_500hPa", "wind_speed_300hPa",
                 "wind_direction_1000hPa", "wind_direction_925hPa",
-                "wind_direction_850hPa", "wind_direction_700hPa", "wind_direction_500hPa",
+                "wind_direction_850hPa", "wind_direction_700hPa",
+                "wind_direction_500hPa", "wind_direction_300hPa",
                 "surface_pressure",
             ],
             "temperature_unit": "celsius",
@@ -227,15 +250,3 @@ class OpenMeteoAPI:
         self._cache.clear()
         self._cache_timestamps.clear()
         logger.info("Cache cleared")
-
-    def get_cache_age_seconds(self, cache_key: str, lat=None, lon=None) -> float | None:
-        """
-        Сколько секунд назад данные были реально получены от API (а не из кэша).
-        Возвращает None, если для этого ключа/координат ещё ничего не кэшировано
-        (например, самый первый запрос в процессе).
-        """
-        full_key = f"{cache_key}_{lat if lat is not None else ''}_{lon if lon is not None else ''}"
-        timestamp = self._cache_timestamps.get(full_key)
-        if timestamp is None:
-            return None
-        return (datetime.now() - timestamp).total_seconds()
