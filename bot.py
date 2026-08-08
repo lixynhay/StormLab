@@ -278,8 +278,6 @@ async def _send_ai_analysis(message_target, context):
         parse_mode="Markdown"
     )
 
-# --- COMMANDS ---
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("⚡ Грозовые индексы", callback_data="storm"),
@@ -359,13 +357,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/ai [город] - AI-анализ грозовой обстановки\n"
         "/help - Эта справка\n\n"
         "💡 *Поддержка проекта:*\n"
-        "Этот бот полностью бесплатен и создан энтузиастом. "
-        "Если он полезен, ты можешь поддержать оплату серверов:\n"
-        "💎 *TON:* `UQC-plwq4_uIPlVxTSba2IAm3L805D6iWxdMCMaVXeqwz5CZ`\n"
-        "☕ *Boosty:* [Поддержать проект](https://boosty.to/lixynyt167/purchase/1865325?ssource=DIRECT&share=subscription_link)\n\n"
+        "Этот бот полностью бесплатен и создан энтузиастом для метеорологического сообщества. "
+        "Если он вам полезен, вы можете поддержать оплату серверов:\n"
+        "💎 *TON:* `UQC-plwq4_uIPlVxTSba2IAm3L805D6iWxdMCMaVXeqwz5CZ` (нажми, чтобы скопировать)\n"
+        "☕ *Boosty:* [Поддержать проект](https://boosty.to/lixynyt167/purchase/1865325?ssource=DIRECT&share=subscription_link) (безопасно и анонимно)\n\n"
         "_Расчёт по доступному профилю. Не заменяет официальный прогноз._"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.effective_message.reply_text(text, parse_mode="Markdown")
 
 async def alert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = await _resolve_target(context, update.message, context.args)
@@ -394,12 +392,18 @@ async def unalert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"ℹ️ Подписка на {city} не найдена.")
 
 async def alerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    alerts = get_user_alerts(update.effective_user.id)
+    user_id = update.effective_user.id
+    alerts = get_user_alerts(user_id)
     if not alerts:
-        await update.message.reply_text("📭 У тебя нет активных подписок.\n\nПодписаться: `/alert Москва`", parse_mode="Markdown")
+        await update.effective_message.reply_text(
+            "📭 У тебя нет активных подписок.\n\n"
+            "Подписаться: `/alert Москва`",
+            parse_mode="Markdown"
+        )
         return
 
     lines = [f"📬 *Твои подписки ({len(alerts)}):*\n"]
+    
     for alert in alerts:
         city = alert["city"]
         lat, lon = alert.get("lat"), alert.get("lon")
@@ -407,28 +411,56 @@ async def alerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if lat and lon:
             try:
                 om_data = weather_api.get_current(lat, lon)
-                pressure_data = weather_api.get_pressure_levels(lat, lon)
-                report = build_storm_report({"current": om_data["current"]}, {"hourly": pressure_data.get("hourly", {})})
+                pressure_data_raw = weather_api.get_pressure_levels(lat, lon)
+                current_data = {"current": om_data["current"]}
+                pressure_data_dict = {"hourly": pressure_data_raw.get("hourly", {})}
+                report = build_storm_report(current_data, pressure_data_dict)
                 t = report.get("threat_level", 0) or 0
                 threat = ["⚪", "🟢", "🟡", "🟠", "🔴", "⚫"][min(t, 5)]
             except Exception:
                 threat = "⚪"
         lines.append(f"{threat} {city}")
-    lines.append("\n_Отписаться:_ `/unalert город`")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
-# --- BUTTON HANDLER ---
+    lines.append("\n_Отписаться:_ `/unalert город`")
+    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    lines.append("\n_Отписаться:_ `/unalert город`")
+    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    # 1. Alerts list
     if query.data == "alerts":
-        await alerts_command(update, context)
+        await query.answer()
+        user_id = update.effective_user.id
+        alerts = get_user_alerts(user_id)
+        if not alerts:
+            text = "📭 У тебя нет активных подписок.\n\n"
+            text += "Подписаться: `/alert Москва`"
+        else:
+            lines = [f"📬 *Твои подписки ({len(alerts)}):*\n"]
+            for alert in alerts:
+                city = alert["city"]
+                lat, lon = alert.get("lat"), alert.get("lon")
+                threat = "⚪"
+                if lat and lon:
+                    try:
+                        om_data = weather_api.get_current(lat, lon)
+                        pressure_data_raw = weather_api.get_pressure_levels(lat, lon)
+                        current_data = {"current": om_data["current"]}
+                        pressure_data_dict = {"hourly": pressure_data_raw.get("hourly", {})}
+                        report = build_storm_report(current_data, pressure_data_dict)
+                        t = report.get("threat_level", 0) or 0
+                        threat = ["⚪", "🟢", "🟡", "🟠", "🔴", "⚫"][min(t, 5)]
+                    except Exception:
+                        threat = "⚪"
+                lines.append(f"{threat} {city}")
+            lines.append("\n_Отписаться:_ `/unalert город`")
+            text = "\n".join(lines)
+        await query.message.reply_text(text, parse_mode="Markdown")
         return
 
-    # 2. Time selection
     if query.data.startswith("time:"):
         time_idx = int(query.data.split(":")[1])
         time_info = TIME_OFFSETS[time_idx]
@@ -441,7 +473,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         lat, lon, city = target
         
-        # Удаляем сообщение "Выбери время..."
         pending_msg_id = context.user_data.get("pending_message_id")
         if pending_msg_id:
             try:
@@ -450,7 +481,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             context.user_data.pop("pending_message_id", None)
         
-        # Отправляем временное сообщение о расчете
         calc_msg = await query.message.reply_text(f"⏳ Считаю для *{city}* на {time_info['label']}...", parse_mode="Markdown")
         
         if action == "storm":
@@ -458,14 +488,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif action == "skewt":
             await _send_skewt(query.message, lat, lon, city, time_idx, time_info["label"], context)
             
-        # Удаляем сообщение "Считаю..." после отправки результата
         try:
             await context.bot.delete_message(chat_id=query.message.chat.id, message_id=calc_msg.message_id)
         except Exception:
             pass
         return
 
-    # 3. Sounding station selection
     if query.data.startswith("stn:"):
         mid = query.message.message_id
         ctx = _skewt_ctx.get(mid)
@@ -499,7 +527,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_media(InputMediaPhoto(chart, caption=cap), reply_markup=markup)
         return
 
-    # 4. Short callback actions (NO CITY IN CALLBACK DATA to avoid 64-byte limit)
     target = context.user_data.get("geo")
     if not target and query.data in ["refresh", "skewt", "ai"]:
         await query.answer("Сначала укажи город через /storm", show_alert=True)
@@ -527,7 +554,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("📍 Укажи новый город:\n`/storm Москва`", parse_mode="Markdown")
             return
 
-    # 5. Main menu buttons (fallback if geo is set)
     if target:
         lat, lon, city = target
         if query.data == "storm":
@@ -543,8 +569,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _send_radar(query.message, lat, lon, city, context)
         elif query.data == "help":
             await help_command(update, context)
-
-# --- ERROR HANDLING & MAIN ---
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(context.error, (TimedOut, NetworkError)):

@@ -11,14 +11,13 @@ SKEWT_LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300]
 def interpret_cin(cin_value):
     cin_abs = abs(cin_value) if cin_value is not None else 0
     if cin_abs < 25:
-        return " Крышка отсутствует — свободная конвекция"
+        return "🟢 Крышка отсутствует — свободная конвекция"
     elif cin_abs < 50:
         return "🟡 Слабая крышка"
     elif cin_abs < 200:
         return "🟠 Умеренная крышка — нужен триггер (фронт, орография)"
     else:
         return "🔴 Сильная крышка — грозы маловероятны"
-
 
 def interpret_stp(stp):
     if stp is None:
@@ -34,7 +33,6 @@ def interpret_stp(stp):
     else:
         return "⚫ Экстремальный риск (EF3+)"
 
-
 def interpret_scp(scp):
     if scp is None:
         return "н/д"
@@ -43,23 +41,21 @@ def interpret_scp(scp):
     elif scp < 4:
         return "🟡 Возможны суперячейки"
     elif scp < 8:
-        return " Высокий потенциал суперячеек"
+        return "🟠 Высокий потенциал суперячеек"
     else:
         return "🔴 Экстремальный потенциал суперячеек"
-
 
 def interpret_dcape(dcape):
     if dcape is None:
         return "н/д"
     if dcape < 500:
-        return " Слабые нисходящие потоки"
+        return "🟢 Слабые нисходящие потоки"
     elif dcape < 1000:
         return "🟡 Умеренные нисходящие потоки"
     elif dcape < 1500:
         return "🟠 Риск сильных шквалов"
     else:
         return "🔴 Высокий риск микропорывов (downburst)"
-
 
 def interpret_mcs_maintenance(mcsm):
     if mcsm is None:
@@ -68,19 +64,17 @@ def interpret_mcs_maintenance(mcsm):
         return f"🟢 MCS не будет поддерживаться (score {mcsm['score']}/4)"
     return f"🔴 MCS устойчив (score {mcsm['score']}/4): {', '.join(mcsm['reasons'])}"
 
-
 def interpret_shear(bulk_shear_06):
     if bulk_shear_06 is None or bulk_shear_06 == 0:
         return "Нет данных о ветре на уровнях"
     elif bulk_shear_06 < 10:
-        return " Слабый (одиночные ячейки)"
+        return "🟢 Слабый (одиночные ячейки)"
     elif bulk_shear_06 < 20:
         return "🟡 Умеренный (мультиячейковые грозы)"
     elif bulk_shear_06 < 30:
         return "🟠 Сильный (суперячейки)"
     else:
         return "🔴 Очень сильный (суперячейки / шквалистые линии)"
-
 
 def interpret_k_index(k):
     if k < 15:
@@ -96,10 +90,9 @@ def interpret_k_index(k):
     else:
         return "⚫ Экстремальная конвекция!"
 
-
 def interpret_tt(tt):
     if tt < 44:
-        return " Нет конвекции"
+        return "🟢 Нет конвекции"
     elif tt < 47:
         return "🟡 Слабая конвекция"
     elif tt < 50:
@@ -107,8 +100,7 @@ def interpret_tt(tt):
     elif tt < 53:
         return "🔴 Вероятны грозы"
     else:
-        return " Сильные грозы вероятны"
-
+        return "⚫ Сильные грозы вероятны"
 
 def interpret_li(li):
     if li is None:
@@ -118,12 +110,11 @@ def interpret_li(li):
     elif li > 0:
         return "🟡 Слабая нестабильность"
     elif li > -3:
-        return " Умеренная нестабильность"
+        return "🟠 Умеренная нестабильность"
     elif li > -6:
-        return " Сильная нестабильность"
+        return "🔴 Сильная нестабильность"
     else:
         return "⚫ Экстремальная нестабильность"
-
 
 def interpret_si(si):
     if si is None:
@@ -133,12 +124,11 @@ def interpret_si(si):
     elif si > 1:
         return "🟡 Возможны ливни"
     elif si > -2:
-        return " Возможны грозы"
+        return "🟠 Возможны грозы"
     elif si > -6:
         return "🔴 Вероятны сильные грозы"
     else:
         return "⚫ Вероятны сильные грозы/торнадо"
-
 
 def interpret_sweat(sweat):
     if sweat is None:
@@ -152,19 +142,17 @@ def interpret_sweat(sweat):
     else:
         return "🔴 Очень высокая (возможны торнадо)"
 
-
 def interpret_ehi(ehi):
     if ehi is None:
         return "н/д (нет данных о сдвиге)"
     if ehi < 1:
-        return " Низкий потенциал суперячеек"
+        return "🟢 Низкий потенциал суперячеек"
     elif ehi < 2:
-        return " Умеренный потенциал"
+        return "🟡 Умеренный потенциал"
     elif ehi < 4:
         return "🟠 Значительный потенциал (сильные торнадо)"
     else:
         return "🔴 Экстремальный потенциал"
-
 
 def interpret_brn(brn):
     if brn is None:
@@ -174,7 +162,7 @@ def interpret_brn(brn):
     elif brn <= 45:
         return "🟢 Благоприятно для суперячеек"
     else:
-        return " Слабый сдвиг относительно CAPE (мультиячейковые грозы)"
+        return "🟡 Слабый сдвиг относительно CAPE (мультиячейковые грозы)"
 
 def calculate_stp(cape, srh, lcl_height_m, cin, shear_06):
     try:
@@ -182,26 +170,23 @@ def calculate_stp(cape, srh, lcl_height_m, cin, shear_06):
             return None
         if cape <= 0 or shear_06 <= 0:
             return 0.0
-        cape_term = max(0, cape / 1500)
-        if lcl_height_m is None or lcl_height_m < 1000:
+        
+        cape_term = max(0.0, min(1.0, cape / 1500.0))
+        
+        if lcl_height_m is None:
             lcl_term = 1.0
-        elif lcl_height_m > 2000:
-            lcl_term = 0.0
         else:
-            lcl_term = (2000 - lcl_height_m) / 1000
-        srh_term = max(0, srh / 150)
-        shear_term = min(shear_06 / 20, 1.5) if shear_06 < 30 else 1.5
-        cin_abs = abs(cin) if cin else 0
-        if cin_abs < 50:
-            cin_term = 1.0
-        elif cin_abs > 200:
-            cin_term = 0.0
-        else:
-            cin_term = (200 - cin_abs) / 150
+            lcl_term = max(0.0, min(1.0, (2000.0 - lcl_height_m) / 1000.0))
+        
+        srh_term = max(0.0, min(1.0, srh / 150.0))
+        shear_term = max(0.0, min(1.5, shear_06 / 20.0))
+        
+        cin_abs = abs(cin) if cin is not None else 0.0
+        cin_term = max(0.0, min(1.0, (200.0 - cin_abs) / 150.0))
+        
         return round(cape_term * lcl_term * srh_term * shear_term * cin_term, 2)
     except Exception:
         return None
-
 
 def calculate_scp(cape, srh, shear_06, cin):
     try:
@@ -209,18 +194,17 @@ def calculate_scp(cape, srh, shear_06, cin):
             return None
         if cape <= 0 or shear_06 <= 0:
             return 0.0
-        cape_term = max(0, cape / 1000)
-        srh_term = max(0, srh / 100)
-        shear_term = min(shear_06 / 20, 1.5) if shear_06 < 30 else 1.5
-        cin_abs = abs(cin) if cin else 0
-        if cin_abs < 50:
-            cin_term = 1.0
-        else:
-            cin_term = max(0, (200 - cin_abs) / 150)
+        
+        cape_term = max(0.0, cape / 1000.0)
+        srh_term = max(0.0, srh / 100.0)
+        shear_term = max(0.0, min(1.5, shear_06 / 20.0))
+        
+        cin_abs = abs(cin) if cin is not None else 0.0
+        cin_term = max(0.0, min(1.0, (200.0 - cin_abs) / 150.0))
+        
         return round(cape_term * srh_term * shear_term * cin_term, 2)
     except Exception:
         return None
-
 
 def calculate_dcape(pressure_profile, temperature_profile, dewpoint_profile):
     try:
@@ -239,6 +223,7 @@ def calculate_dcape(pressure_profile, temperature_profile, dewpoint_profile):
         except Exception:
             pass
 
+        # Ручной fallback с использованием виртуальной температуры (Tv) для точности
         theta_e_list = []
         for i in range(len(p)):
             if 500 <= p[i].magnitude <= 900:
@@ -253,25 +238,34 @@ def calculate_dcape(pressure_profile, temperature_profile, dewpoint_profile):
 
         min_idx, _ = min(theta_e_list, key=lambda x: x[1])
         theta_parcel = mpcalc.potential_temperature(p[min_idx], T[min_idx])
-
+        
         Rd = 287.05
         g = 9.81
         dcape = 0
+        
         for i in range(min_idx + 1, len(p)):
             p_i = p[i]
             T_env = T[i]
             T_parcel = theta_parcel * (p_i / (1000 * units.hPa)) ** (Rd / 1004.0)
-            if T_parcel < T_env:
-                buoyancy = g * (T_env - T_parcel).magnitude / (T_env.magnitude + 273.15)
+            
+            Td_env = Td[i]
+            w_env = mpcalc.mixing_ratio_from_relative_humidity(
+                p_i, T_env, 
+                mpcalc.relative_humidity_from_dewpoint(T_env, Td_env)
+            ).magnitude
+            Tv_env = T_env.magnitude * (1 + 0.61 * w_env)
+            Tv_parcel = T_parcel.magnitude
+            
+            if Tv_parcel < Tv_env:
+                buoyancy = g * (Tv_env - Tv_parcel) / (Tv_env + 273.15)
                 p_prev = p[i - 1]
-                dz = (Rd * (T_env.magnitude + 273.15) / g) * np.log(p_prev.magnitude / p_i.magnitude)
+                dz = (Rd * (Tv_env + 273.15) / g) * np.log(p_prev.magnitude / p_i.magnitude)
                 dcape += buoyancy * dz
 
         return round(dcape, 0) if dcape > 0 else None
     except Exception as e:
         logger.warning(f"DCAPE calculation failed: {e}")
         return None
-
 
 def calculate_mcs_maintenance(cape, shear_06, mid_layer_spread):
     try:
@@ -295,7 +289,6 @@ def calculate_mcs_maintenance(cape, shear_06, mid_layer_spread):
     except Exception:
         return None
 
-
 def lcl_pressure_to_height(lcl_pressure_hpa):
     try:
         if lcl_pressure_hpa is None or lcl_pressure_hpa <= 0:
@@ -303,7 +296,6 @@ def lcl_pressure_to_height(lcl_pressure_hpa):
         return round((1 - (lcl_pressure_hpa / 1013.25) ** 0.190284) * 44330, 0)
     except Exception:
         return None
-
 
 def calculate_cape_real(pressure_profile, temperature_profile, dewpoint_profile):
     try:
@@ -319,7 +311,6 @@ def calculate_cape_real(pressure_profile, temperature_profile, dewpoint_profile)
     except Exception as e:
         logger.error(f"CAPE failed: {type(e).__name__}: {e}", exc_info=True)
         return None, None, None, "SB"
-
 
 def calculate_mlcape_real(pressure_profile, temperature_profile, dewpoint_profile):
     try:
@@ -340,7 +331,6 @@ def calculate_mlcape_real(pressure_profile, temperature_profile, dewpoint_profil
         logger.warning(f"MLCAPE failed: {e}")
         return None
 
-
 def calculate_mucape_real(pressure_profile, temperature_profile, dewpoint_profile):
     try:
         p = np.array(pressure_profile) * units.hPa
@@ -360,7 +350,6 @@ def calculate_mucape_real(pressure_profile, temperature_profile, dewpoint_profil
         logger.warning(f"MUCAPE failed: {e}")
         return None
 
-
 def calculate_lifted_index_metpy(pressure_profile, temperature_profile, dewpoint_profile):
     try:
         p = np.array(pressure_profile) * units.hPa
@@ -369,11 +358,10 @@ def calculate_lifted_index_metpy(pressure_profile, temperature_profile, dewpoint
         idx_500 = int(np.argmin(np.abs(p.magnitude - 500)))
         parcel_prof = mpcalc.parcel_profile(p[:idx_500 + 1], T[0], Td[0])
         li = (T[idx_500] - parcel_prof[-1]).magnitude
-        return max(-15, min(20, li))
+        return round(max(-15.0, min(20.0, float(li))), 1)
     except Exception as e:
         logger.warning(f"Lifted Index (MetPy) failed: {e}")
         return None
-
 
 def validate_profile_physical(pressure_profile, temperature_profile):
     if len(pressure_profile) < 2:
@@ -384,7 +372,6 @@ def validate_profile_physical(pressure_profile, temperature_profile):
             return False
     return True
 
-
 def calculate_thunderstorm_indices(pressure_levels, temperatures, dewpoints):
     result = {}
     try:
@@ -393,9 +380,20 @@ def calculate_thunderstorm_indices(pressure_levels, temperatures, dewpoints):
         Td = np.array(dewpoints)
 
         def find_level(target):
-            return int(np.argmin(np.abs(p - target)))
+            idx = int(np.argmin(np.abs(p - target)))
+            if abs(p[idx] - target) > 50:
+                return None
+            return idx
 
         idx_850, idx_700, idx_500 = find_level(850), find_level(700), find_level(500)
+        
+        if idx_850 is None or idx_700 is None or idx_500 is None:
+            result["k_index"] = None
+            result["total_totals"] = None
+            result["k_interpretation"] = "Нет данных (нет уровней 850/700/500)"
+            result["tt_interpretation"] = "Нет данных"
+            return result
+        
         T850, Td850 = T[idx_850], Td[idx_850]
         T700, Td700 = T[idx_700], Td[idx_700]
         T500 = T[idx_500]
@@ -411,35 +409,16 @@ def calculate_thunderstorm_indices(pressure_levels, temperatures, dewpoints):
         result["vertical_totals"] = round(T850 - T500, 1)
 
         try:
-            surface_temp, surface_td = T[0], Td[0]
-            lcl_pressure = 1000 - ((surface_temp - surface_td) / 8) * 100
-            if lcl_pressure > 500:
-                temp_at_lcl = surface_temp - (1000 - lcl_pressure) / 100 * 9.8
-                temp_parcel_500 = temp_at_lcl - (lcl_pressure - 500) / 100 * 6
-            else:
-                temp_parcel_500 = surface_temp - (1000 - 500) / 100 * 9.8
-            lifted_index = max(-15, min(20, T500 - temp_parcel_500))
-            result["lifted_index"] = round(lifted_index, 1)
-            result["li_interpretation"] = interpret_li(lifted_index)
-        except Exception:
-            result["lifted_index"] = None
-            result["li_interpretation"] = "Не удалось рассчитать"
-
-        try:
             mid_layer_spread = np.mean([T[i] - Td[i] for i in range(len(T)) if 500 <= p[i] <= 700])
             result["mid_layer_spread"] = round(mid_layer_spread, 1)
         except Exception:
             result["mid_layer_spread"] = None
-
-        li_for_calc = result.get("lifted_index", 0) or 0
-        result["threat_level"] = calculate_threat_level(k_index, total_totals, li_for_calc)
 
     except Exception as e:
         logger.error(f"Thunderstorm indices error: {e}", exc_info=True)
         result["error"] = str(e)
 
     return result
-
 
 def build_wind_profile(current, hourly, pressure_levels):
     surface_pressure = current.get("surface_pressure")
@@ -467,7 +446,6 @@ def build_wind_profile(current, hourly, pressure_levels):
             dirs.append(d)
 
     return pressures, speeds, dirs
-
 
 def calculate_hodograph_shear_srh(current, hourly, pressure_levels):
     result = {
@@ -505,8 +483,10 @@ def calculate_hodograph_shear_srh(current, hourly, pressure_levels):
             result["srh_method"] = "Bunkers (right-mover)"
         except Exception as e:
             logger.warning(f"Bunkers fallback: {e}")
-            storm_u, storm_v = 15 * units("m/s"), 0 * units("m/s")
-            result["srh_method"] = "оценка (15 м/с с запада)"
+            mean_u = np.mean(u)
+            mean_v = np.mean(v)
+            storm_u, storm_v = mean_u, mean_v
+            result["srh_method"] = "оценка (средний ветер 0-6км)"
 
         _, _, srh_total = mpcalc.storm_relative_helicity(heights, u, v, depth=depth_03, storm_u=storm_u, storm_v=storm_v)
         result["srh"] = round(float(srh_total.to("m^2/s^2").magnitude), 1)
@@ -516,49 +496,80 @@ def calculate_hodograph_shear_srh(current, hourly, pressure_levels):
 
     return result
 
-
 def calculate_showalter_index(pressure_levels, temperatures, dewpoints):
     try:
-        p = np.array(pressure_levels)
-        idx_850, idx_500 = int(np.argmin(np.abs(p - 850))), int(np.argmin(np.abs(p - 500)))
-        p850 = pressure_levels[idx_850] * units.hPa
-        T850, Td850 = temperatures[idx_850] * units.degC, dewpoints[idx_850] * units.degC
-        T500_actual = temperatures[idx_500] * units.degC
-        lcl_p, lcl_t = mpcalc.lcl(p850, T850, Td850)
-        parcel_temp_500 = mpcalc.moist_lapse(500 * units.hPa, lcl_t, reference_pressure=lcl_p)
-        return round((T500_actual - parcel_temp_500).magnitude, 1)
+        p = np.array(pressure_levels) * units.hPa
+        T = np.array(temperatures) * units.degC
+        Td = np.array(dewpoints) * units.degC
+        
+        idx_500 = int(np.argmin(np.abs(p.magnitude - 500)))
+        T500_actual = T[idx_500]
+        
+        try:
+            # Используем ML-парцель (смешанный слой 100 гПа) для большей репрезентативности
+            ml_T, ml_Td = mpcalc.mix(p[:5], T[:5], Td[:5], depth=100 * units.hPa)
+            lcl_p, lcl_t = mpcalc.lcl(p[0], ml_T, ml_Td)
+            parcel_temp_500 = mpcalc.moist_lapse(500 * units.hPa, lcl_t, reference_pressure=lcl_p)
+            return round((T500_actual - parcel_temp_500).magnitude, 1)
+        except Exception:
+            # Fallback на приземный парцель, если ML не удался
+            lcl_p, lcl_t = mpcalc.lcl(p[0], T[0], Td[0])
+            parcel_temp_500 = mpcalc.moist_lapse(500 * units.hPa, lcl_t, reference_pressure=lcl_p)
+            return round((T500_actual - parcel_temp_500).magnitude, 1)
+            
     except Exception as e:
         logger.error(f"Showalter Index error: {e}", exc_info=True)
         return None
-
 
 def calculate_sweat_index(td850, total_totals, wind_speed_850_ms, wind_speed_500_ms, wind_dir_850, wind_dir_500):
     try:
         if td850 is None or total_totals is None:
             return None
+        
         term_td = 12 * max(td850, 0)
         term_tt = 20 * max(total_totals - 49, 0)
-        f850_kt, f500_kt = wind_speed_850_ms * 1.94384, wind_speed_500_ms * 1.94384
+        
+        f850_kt = wind_speed_850_ms * 1.94384 if wind_speed_850_ms is not None else 0
+        f500_kt = wind_speed_500_ms * 1.94384 if wind_speed_500_ms is not None else 0
+        
         shear_term = 0
-        dir_shear = wind_dir_500 - wind_dir_850
+        
         if (wind_dir_850 is not None and wind_dir_500 is not None and
-            130 <= wind_dir_850 <= 250 and 210 <= wind_dir_500 <= 310 and 
-            dir_shear > 0 and f850_kt >= 15 and f500_kt >= 15):
-            shear_term = 125 * (np.sin(np.radians(dir_shear)) + 0.2)
+            130 <= wind_dir_850 <= 250 and 210 <= wind_dir_500 <= 310):
+            dir_shear = wind_dir_500 - wind_dir_850
+            if dir_shear > 0 and f850_kt >= 15 and f500_kt >= 15:
+                shear_term = 125 * (np.sin(np.radians(dir_shear)) + 0.2)
+        
         return round(term_td + term_tt + 2 * f850_kt + f500_kt + shear_term, 0)
     except Exception as e:
         logger.error(f"SWEAT Index error: {e}")
         return None
 
-
-def calculate_ehi(cape, srh):
+def calculate_ehi(cape, srh, pressure_profile=None, temperature_profile=None, dewpoint_profile=None):
     try:
         if srh is None or srh == 0 or cape is None:
             return None
-        return (srh * cape) / 160000
+        
+        # Используем CAPE в слое 0-3 км для более точной оценки торнадо-потенциала
+        if pressure_profile is not None and temperature_profile is not None and dewpoint_profile is not None:
+            try:
+                p = np.array(pressure_profile) * units.hPa
+                T = np.array(temperature_profile) * units.degC
+                Td = np.array(dewpoint_profile) * units.degC
+                
+                heights = mpcalc.pressure_to_height_std(p)
+                idx_3km = np.where(heights <= 3000 * units.m)[0][-1] if np.any(heights <= 3000 * units.m) else len(p) - 1
+                
+                cape_3km, _ = mpcalc.surface_based_cape_cin(p[:idx_3km+1], T[:idx_3km+1], Td[:idx_3km+1])
+                cape_val = cape_3km.magnitude if cape_3km is not None else cape
+            except Exception:
+                cape_val = cape
+        else:
+            cape_val = cape
+        
+        return round((srh * cape_val) / 160000, 2)
     except Exception:
         return None
-
 
 def calculate_brn(cape, bulk_shear_06):
     try:
@@ -568,37 +579,24 @@ def calculate_brn(cape, bulk_shear_06):
     except Exception:
         return None
 
-
 def calculate_threat_level(k, tt, li, cape=0, cin=0, shear_06=0, ehi=0):
     score = 0
     cin_abs = abs(cin) if cin else 0
-    if cape >= 250:
-        score += 1
-    if cape >= 1000:
-        score += 1
-    if cape >= 2500:
-        score += 1
-    if k >= 30:
-        score += 1
-    if tt >= 50:
-        score += 1
-    if li <= -3:
-        score += 1
-    if shear_06 >= 15 and cape >= 750:
-        score += 1
-    if shear_06 < 7:
-        score -= 1
-    if cin_abs > 250:
-        score -= 1
-    if cape < 250 and score > 2:
-        score -= 1
-    if ehi is not None and ehi < -1.0:
-        score -= 1
+    if cape >= 250: score += 1
+    if cape >= 1000: score += 1
+    if cape >= 2500: score += 1
+    if k >= 30: score += 1
+    if tt >= 50: score += 1
+    if li <= -3: score += 1
+    if shear_06 >= 15 and cape >= 750: score += 1
+    if shear_06 < 7: score -= 1
+    if cin_abs > 250: score -= 1
+    if cape < 250 and score > 2: score -= 1
+    if ehi is not None and ehi < 0: score -= 1  # Отрицательный EHI (левый суперячейковый режим) снижает риск
     return max(0, min(score, 5))
 
-
 def _threat_bar(level: int) -> str:
-    return "" * level + "⬜" * (5 - level)
+    return "🟥" * level + "⬜" * (5 - level)
 
 def build_storm_report(current_data: dict, pressure_data: dict) -> dict:
     current = current_data["current"]
@@ -662,6 +660,11 @@ def build_storm_report(current_data: dict, pressure_data: dict) -> dict:
         report["showalter_index"] = calculate_showalter_index(valid_levels, temperatures, dewpoints)
         report["si_interpretation"] = interpret_si(report["showalter_index"])
 
+        # Точный расчёт LI через MetPy на полном профиле
+        li_metpy = calculate_lifted_index_metpy(profile_pressure, profile_temp, profile_dewpoint)
+        report["lifted_index"] = li_metpy
+        report["li_interpretation"] = interpret_li(li_metpy)
+
         if 850 in valid_levels and 500 in valid_levels:
             idx_850 = valid_levels.index(850)
             report["sweat_index"] = calculate_sweat_index(
@@ -677,19 +680,24 @@ def build_storm_report(current_data: dict, pressure_data: dict) -> dict:
         report["error"] = "Недостаточно данных профиля"
 
     report.update(calculate_hodograph_shear_srh(current, hourly, PRESSURE_LEVELS))
-
-    report["ehi"] = calculate_ehi(report.get("cape"), report.get("srh"))
+    
+    report["ehi"] = calculate_ehi(
+        report.get("cape"), report.get("srh"),
+        profile_pressure, profile_temp, profile_dewpoint
+    )
     report["ehi_interpretation"] = interpret_ehi(report["ehi"])
     report["brn"] = calculate_brn(report.get("cape"), report.get("bulk_shear_06"))
     report["brn_interpretation"] = interpret_brn(report["brn"])
 
     lcl_height_m = lcl_pressure_to_height(report.get("lcl"))
     report["lcl_height_m"] = lcl_height_m
+    
     report["stp"] = calculate_stp(
         report.get("cape"), report.get("srh"),
         lcl_height_m, report.get("cin"), report.get("bulk_shear_06")
     )
     report["stp_interpretation"] = interpret_stp(report["stp"])
+    
     report["scp"] = calculate_scp(
         report.get("cape"), report.get("srh"),
         report.get("bulk_shear_06"), report.get("cin")
@@ -708,6 +716,7 @@ def build_storm_report(current_data: dict, pressure_data: dict) -> dict:
     )
     report["mcsm_interpretation"] = interpret_mcs_maintenance(report["mcs_maintenance"])
 
+    # Финальный расчёт уровня угрозы, когда ВСЕ индексы уже гарантированно рассчитаны
     cape = report.get("cape", 0) or 0
     k_index = report.get("k_index", 0) or 0
     total_totals = report.get("total_totals", 0) or 0
@@ -715,13 +724,13 @@ def build_storm_report(current_data: dict, pressure_data: dict) -> dict:
     cin = report.get("cin", 0) or 0
     shear_06 = report.get("bulk_shear_06", 0) or 0
     ehi = report.get("ehi", 0) or 0
+    
     report["threat_level"] = calculate_threat_level(
         k_index, total_totals, li_for_calc,
         cape=cape, cin=cin, shear_06=shear_06, ehi=ehi
     )
 
     return report
-
 
 def format_storm_text(report: dict, city: str, timestamp_str: str) -> str:
     if "error" in report:
@@ -876,7 +885,6 @@ def build_skewt_context_for_ai(report: dict, current: dict, pressure_data: dict)
                 )
                 lfc_p, _ = mpcalc.lfc(p, T, Td)
                 el_p, _ = mpcalc.el(p, T, Td)
-                # Исправленная проверка на None
                 lfc_v = float(lfc_p.magnitude) if lfc_p is not None and hasattr(lfc_p, 'magnitude') and np.isfinite(lfc_p.magnitude) else None
                 el_v = float(el_p.magnitude) if el_p is not None and hasattr(el_p, 'magnitude') and np.isfinite(el_p.magnitude) else None
                 if lfc_v:
