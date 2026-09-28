@@ -127,7 +127,7 @@ def _draw_skewt(ax, current, hourly, city, time_label, indices_text=None):
             wind_speed = np.array(speeds) * units("m/s")
             wind_dir = np.array(dirs) * units.deg
             u, v = mpcalc.wind_components(wind_speed, wind_dir)
-            skew.plot_barbs(wind_p, u, v, color=BARB_COLOR, length=6, linewidth=1.3)
+            skew.plot_barbs(wind_p, u, v, color=_barb_color(np.mean(speeds)), length=6, linewidth=1.3)
         except Exception as e:
             logger.warning(f"Wind barbs: {e}")
 

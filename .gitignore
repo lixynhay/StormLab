@@ -1,6 +1,2 @@
-# Python compiled files
 __pycache__/
 *.pyc
-
-# Environment files
-.env
