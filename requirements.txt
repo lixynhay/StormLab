@@ -1,7 +1,7 @@
-python-telegram-bot>=22.9
+python-telegram-bot>=22.8
 httpx[http2]>=0.28.1
 MetPy>=1.7.1
-numpy>=2.5.1
+numpy>=2.4.6
 scipy>=1.14.0
 matplotlib>=3.11.1
 Pillow>=12.3.0
