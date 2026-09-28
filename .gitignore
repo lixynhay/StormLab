@@ -1,10 +1,6 @@
-.env
-.venv/
-venv/
+# Python compiled files
 __pycache__/
 *.pyc
-*.log
-data/
-.idea/
-.vscode/
-ai_coder.py
+
+# Environment files
+.env
