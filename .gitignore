@@ -1,2 +1,16 @@
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.env
+.venv/
+venv/
+data/
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+.DS_Store
