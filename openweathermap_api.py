@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 class OpenWeatherMapAPI:
     def __init__(self):
         self.base_url = "https://api.openweathermap.org/data/2.5/weather"
+        # Переиспользование TCP/TLS-соединений между запросами
+        self._session = requests.Session()
 
     def get_current(self, lat: float, lon: float) -> dict | None:
         if not OPENWEATHERMAP_API_KEY:
@@ -33,7 +35,7 @@ class OpenWeatherMapAPI:
         for attempt in range(1, OWM_RETRY_ATTEMPTS + 1):
             try:
                 logger.info(f"OpenWeatherMap API request (attempt {attempt}/{OWM_RETRY_ATTEMPTS})")
-                response = requests.get(self.base_url, params=params, timeout=OWM_API_TIMEOUT)
+                response = self._session.get(self.base_url, params=params, timeout=OWM_API_TIMEOUT)
 
                 if response.status_code == 429:
                     logger.warning("OpenWeatherMap: rate limited")

@@ -191,12 +191,18 @@ def record_alert_sent(user_id: int, city: str):
 
 def check_dangerous_conditions(report: Dict) -> Optional[str]:
     try:
-        cape = report.get("cape", 0)
-        shear_06 = report.get("bulk_shear_06", 0)
-        lcl = report.get("lcl", 1000)
-        cin = abs(report.get("cin", 0))
-        
-        lcl_meters = (1000 - lcl) * 10 if lcl < 1000 else 0
+        cape = report.get("cape") or 0
+        shear_06 = report.get("bulk_shear_06") or 0
+        cin = abs(report.get("cin") or 0)
+
+        # LCL в отчёте хранится в гПа; берём уже рассчитанную высоту, иначе конвертируем
+        lcl_meters = report.get("lcl_height_m")
+        if lcl_meters is None:
+            lcl = report.get("lcl")
+            if lcl and 0 < lcl < 1013.25:
+                lcl_meters = (1 - (lcl / 1013.25) ** 0.190284) * 44330
+            else:
+                lcl_meters = None
         
         reasons = []
         
@@ -206,7 +212,7 @@ def check_dangerous_conditions(report: Dict) -> Optional[str]:
         if shear_06 >= THRESHOLDS["shear_06_min"]:
             reasons.append(f"сдвиг 0-6 км {shear_06} м/с")
         
-        if lcl_meters <= THRESHOLDS["lcl_max"] and lcl_meters > 0:
+        if lcl_meters is not None and 0 < lcl_meters <= THRESHOLDS["lcl_max"]:
             reasons.append(f"низкий LCL ({int(lcl_meters)} м)")
         
         if cin <= THRESHOLDS["cin_max"]:
@@ -223,5 +229,35 @@ def check_dangerous_conditions(report: Dict) -> Optional[str]:
     except Exception as e:
         logger.error(f"Failed to check dangerous conditions: {e}")
         return None
+
+
+def prune_history(max_age_days: int = 30) -> int:
+    """Удаляет записи alert_history старше max_age_days (вызывается фоновой задачей)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM alert_history WHERE sent_at < datetime('now', ?)",
+            (f"-{int(max_age_days)} days",),
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        if deleted:
+            logger.info(f"Pruned {deleted} old alert_history rows")
+        return deleted
+    except Exception as e:
+        logger.error(f"Failed to prune alert history: {e}")
+        return 0
+
+
+def _self_check():
+    """Минимальная проверка логики порогов (используется тестами)."""
+    hot = {"cape": 2500, "bulk_shear_06": 25, "cin": -50, "lcl": 850.0}
+    calm = {"cape": 100, "bulk_shear_06": 3, "cin": -300, "lcl": 900.0}
+    assert check_dangerous_conditions(hot) is not None, "dangerous profile must trigger alert"
+    assert check_dangerous_conditions(calm) is None, "calm profile must not trigger alert"
+    return True
+
 
 init_db()
