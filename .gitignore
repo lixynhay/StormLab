@@ -1,1 +1,17 @@
-(empty)
+# Секреты и окружение
+.env
+.venv/
+venv/
+
+# Python кэш
+__pycache__/
+*.pyc
+*.pyo
+
+# Логи и данные
+*.log
+data/
+
+# IDE
+.idea/
+.vscode/
