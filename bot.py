@@ -104,8 +104,8 @@ def _get_fused_current_data(lat, lon, time_index):
 
 async def _resolve_target(context, message_target, args=None):
     if args:
-        query = " ".join(args).strip()
-        result = resolve_city(query)
+        query = " ".join(args).strip()[:100]  # защита от чрезмерно длинных строк (DoS на геокодер)
+        result = await asyncio.to_thread(resolve_city, query)
         if result is None:
             await message_target.reply_text(
                 f"❌ Не нашёл город «{md(query)}». Проверь название или попробуй по-английски (например, 'Moscow').",
@@ -250,7 +250,7 @@ async def _send_skewt(message_target, lat, lon, city, time_index, time_label, co
 async def _send_radar(message_target, lat, lon, city, context):
     await message_target.reply_text(f"📡 Загружаю радар для *{md(city)}*...", parse_mode="Markdown")
     try:
-        radar_path, timestamp_utc, is_cached = get_latest_radar_frame()
+        radar_path, timestamp_utc, is_cached = await asyncio.to_thread(get_latest_radar_frame)
         if radar_path is None:
             await message_target.reply_text(
                 "📡 Радар временно недоступен.\n\n"
@@ -395,7 +395,7 @@ async def alert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username
     
-    if add_alert(user_id, username, city, lat, lon):
+    if add_alert(user_id, username, city.strip(), lat, lon):
         text = (f"✅ *Подписка активирована!*\n\n📍 {md(city)}\n\n"
                 "Бот будет проверять условия каждые 30 минут и предупреждать "
                 "о риске организованных гроз или суперячеек.\n\n"
@@ -665,6 +665,11 @@ def build_application() -> Application:
     return application
 
 def main():
+    if not BOT_TOKEN:
+        raise RuntimeError(
+            "BOT_TOKEN не найден. Создай файл .env на основе .env.example "
+            "и укажи токен бота."
+        )
     logger.info("Запуск метеобота...")
     MIN_UPTIME_SECONDS = 30
     MAX_CONSECUTIVE_FAST_FAILURES = 5

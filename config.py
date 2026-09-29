@@ -5,11 +5,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise RuntimeError(
-        "BOT_TOKEN не найден. Создай файл .env на основе .env.example "
-        "и укажи токен бота."
-    )
+# BOT_TOKEN обязателен только для bot.py; REST API (api.py) работает без него.
+# Проверка перенесена в bot.main(), чтобы импорт config не падал в API-режиме.
+
+# Ключ доступа к REST API (защита эндпоинтов). Если не задан — API закрыт (403).
+API_ACCESS_KEY = os.getenv("API_ACCESS_KEY")
 
 DEFAULT_CITY = "Екатеринбург"
 DEFAULT_LAT = 56.8333
