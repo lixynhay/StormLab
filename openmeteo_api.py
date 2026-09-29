@@ -46,7 +46,13 @@ class OpenMeteoAPI:
         self.base_url = "https://api.open-meteo.com/v1/forecast"
         self.lat = DEFAULT_LAT
         self.lon = DEFAULT_LON
-        
+
+        # Circuit breaker: после 3 подряд неудачных запросов «открывается» на 5 минут,
+        # чтобы не долбить API во время его деградации (защита от каскадных сбоев).
+        self._breaker = CircuitBreaker(failure_threshold=3, reset_timeout=300)
+        # Переиспользование TCP/TLS-соединений между запросами
+        self._session = requests.Session()
+
         self._cache: Dict[str, Any] = {}
         self._cache_timestamps: Dict[str, datetime] = {}
         self._max_cache_size = 50
@@ -108,8 +114,10 @@ class OpenMeteoAPI:
         for attempt in range(API_RETRY_ATTEMPTS):
             try:
                 logger.info(f"API request to Open-Meteo (attempt {attempt + 1})")
-                response = requests.get(
-                    self.base_url, params=params, timeout=(API_TIMEOUT, API_TIMEOUT * 2)
+                response = self._breaker.call(
+                    lambda: self._session.get(
+                        self.base_url, params=params, timeout=(API_TIMEOUT, API_TIMEOUT * 2)
+                    )
                 )
 
                 if response.status_code == 429:
@@ -138,6 +146,10 @@ class OpenMeteoAPI:
 
                 return data
 
+            except RuntimeError as e:
+                # Circuit breaker открыт — не долбим API, сразу отдаём ошибку наружу
+                logger.error(f"Circuit breaker: {e}")
+                raise
             except requests.exceptions.Timeout as e:
                 last_error = e
                 logger.warning(f"API timeout (attempt {attempt + 1}/{API_RETRY_ATTEMPTS})")

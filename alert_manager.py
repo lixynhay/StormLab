@@ -230,6 +230,27 @@ def check_dangerous_conditions(report: Dict) -> Optional[str]:
         logger.error(f"Failed to check dangerous conditions: {e}")
         return None
 
+
+def prune_history(max_age_days: int = 30) -> int:
+    """Удаляет записи alert_history старше max_age_days (вызывается фоновой задачей)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM alert_history WHERE sent_at < datetime('now', ?)",
+            (f"-{int(max_age_days)} days",),
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        if deleted:
+            logger.info(f"Pruned {deleted} old alert_history rows")
+        return deleted
+    except Exception as e:
+        logger.error(f"Failed to prune alert history: {e}")
+        return 0
+
+
 def _self_check():
     """Минимальная проверка логики порогов (используется тестами)."""
     hot = {"cape": 2500, "bulk_shear_06": 25, "cin": -50, "lcl": 850.0}

@@ -17,3 +17,5 @@ colorlog>=6.12.0
 requests>=2.34.2
 pandas>=3.0.5
 siphon>=0.9.0
+fastapi>=0.115.0
+uvicorn>=0.30.0
