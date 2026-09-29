@@ -1,12 +1,15 @@
+import asyncio
 import logging
 import os
 import sys
 import time
 from datetime import datetime, timezone
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
+from telegram.constants import ParseMode
 from telegram.error import TimedOut, NetworkError
 from telegram.ext import (
-    Application, CallbackQueryHandler, CommandHandler, ContextTypes, PicklePersistence,
+    Application, CallbackQueryHandler, CommandHandler, ContextTypes, JobQueue,
+    PicklePersistence,
 )
 from telegram.request import HTTPXRequest
 
@@ -24,10 +27,21 @@ from geocoding import resolve_city
 from radar_api import get_latest_radar_frame
 from radar_builder import build_radar_image
 from rate_limiter import check_rate_limit
-from alert_manager import add_alert, remove_alert, get_user_alerts
+from alert_manager import (
+    add_alert, remove_alert, get_user_alerts, get_all_alerts,
+    can_send_alert, record_alert_sent, check_dangerous_conditions,
+)
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+def md(text: str) -> str:
+    """Экранирование для parse_mode=Markdown (классический V1)."""
+    for ch in ("_", "*", "`", "[", "]"):
+        text = text.replace(ch, "\\" + ch)
+    return text
+
 
 weather_api = OpenMeteoAPI()
 owm_api = OpenWeatherMapAPI()
@@ -90,11 +104,12 @@ def _get_fused_current_data(lat, lon, time_index):
 
 async def _resolve_target(context, message_target, args=None):
     if args:
-        query = " ".join(args).strip()
-        result = resolve_city(query)
+        query = " ".join(args).strip()[:100]  # защита от чрезмерно длинных строк (DoS на геокодер)
+        result = await asyncio.to_thread(resolve_city, query)
         if result is None:
             await message_target.reply_text(
-                f"❌ Не нашёл город «{query}». Проверь название или попробуй по-английски (например, 'Moscow')."
+                f"❌ Не нашёл город «{md(query)}». Проверь название или попробуй по-английски (например, 'Moscow').",
+                parse_mode="Markdown"
             )
             return None
         context.user_data["geo"] = result
@@ -158,7 +173,9 @@ async def _send_storm_report(message_target, lat, lon, city, time_index, time_la
     sent_messages = []
     
     try:
-        current_data, pressure_data, source_label = _get_fused_current_data(lat, lon, time_index)
+        current_data, pressure_data, source_label = await asyncio.to_thread(
+            _get_fused_current_data, lat, lon, time_index
+        )
     except Exception as e:
         logger.error(f"Не удалось получить данные: {e}")
         await send_error_card(message_target, "Не удалось получить атмосферные данные.", action_callback="refresh")
@@ -196,7 +213,9 @@ async def _send_skewt(message_target, lat, lon, city, time_index, time_label, co
     await _cleanup_messages(context, message_target.chat.id, "last_skewt_messages")
     
     try:
-        current_data, pressure_data, _ = _get_fused_current_data(lat, lon, time_index)
+        current_data, pressure_data, _ = await asyncio.to_thread(
+            _get_fused_current_data, lat, lon, time_index
+        )
     except Exception as e:
         logger.error(f"Не удалось получить данные: {e}")
         await send_error_card(message_target, "Не удалось получить атмосферные данные.", action_callback="refresh")
@@ -204,12 +223,15 @@ async def _send_skewt(message_target, lat, lon, city, time_index, time_label, co
     
     try:
         report = build_storm_report(current_data, pressure_data)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Storm report failed in skewt: {e}")
         report = None
     
-    probe = probe_stations(lat, lon)
+    probe = await asyncio.to_thread(probe_stations, lat, lon)
     current, hourly = current_data["current"], pressure_data["hourly"]
-    chart = build_skewt_chart(current, hourly, None, None, city, time_label, report=report)
+    chart = await asyncio.to_thread(
+        build_skewt_chart, current, hourly, None, None, city, time_label, report=report
+    )
     
     if chart is None:
         await message_target.reply_text("❌ Не удалось построить Skew-T.")
@@ -226,9 +248,9 @@ async def _send_skewt(message_target, lat, lon, city, time_index, time_label, co
     _prune_ctx()
 
 async def _send_radar(message_target, lat, lon, city, context):
-    await message_target.reply_text(f"📡 Загружаю радар для *{city}*...", parse_mode="Markdown")
+    await message_target.reply_text(f"📡 Загружаю радар для *{md(city)}*...", parse_mode="Markdown")
     try:
-        radar_path, timestamp_utc, is_cached = get_latest_radar_frame()
+        radar_path, timestamp_utc, is_cached = await asyncio.to_thread(get_latest_radar_frame)
         if radar_path is None:
             await message_target.reply_text(
                 "📡 Радар временно недоступен.\n\n"
@@ -236,7 +258,7 @@ async def _send_radar(message_target, lat, lon, city, context):
             )
             return
             
-        radar_image = build_radar_image(lat, lon, radar_path)
+        radar_image = await asyncio.to_thread(build_radar_image, lat, lon, radar_path)
         if radar_image is None:
             await send_error_card(message_target, "Не удалось построить изображение радара.", action_callback="refresh")
             return
@@ -263,7 +285,7 @@ async def _send_ai_analysis(message_target, context):
         lat, lon, city = target
         time_label = "Сейчас"
         try:
-            current_data, pressure_data, _ = _get_fused_current_data(lat, lon, 0)
+            current_data, pressure_data, _ = await asyncio.to_thread(_get_fused_current_data, lat, lon, 0)
             report = build_storm_report(current_data, pressure_data)
         except Exception as e:
             logger.error(f"AI analysis data fetch failed: {e}")
@@ -271,10 +293,11 @@ async def _send_ai_analysis(message_target, context):
             return
             
     skewt_ctx = build_skewt_context_for_ai(report, current_data["current"], pressure_data)
-    analysis = generate_storm_analysis(report, city, skewt_ctx)
+    # Синхронные HTTP-запросы к AI-провайдерам — в потоке, чтобы не блокировать event loop.
+    analysis = await asyncio.to_thread(generate_storm_analysis, report, city, skewt_ctx)
     
     await message_target.reply_text(
-        f"🤖 *AI-анализ ({city}, {time_label}):*\n\n{analysis}",
+        f"🤖 *AI-анализ* ({md(city)}, {time_label}):\n\n{analysis}",
         parse_mode="Markdown"
     )
 
@@ -304,7 +327,7 @@ async def storm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     msg = await update.message.reply_text(
-        f"⏳ Выбери время прогноза для *{city}*:", 
+        f"⏳ Выбери время прогноза для *{md(city)}*:", 
         parse_mode="Markdown", reply_markup=_build_time_markup()
     )
     context.user_data["pending_action"] = "storm"
@@ -320,7 +343,7 @@ async def skewt_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     msg = await update.message.reply_text(
-        f"⏳ Выбери время прогноза для *{city}*:", 
+        f"⏳ Выбери время прогноза для *{md(city)}*:", 
         parse_mode="Markdown", reply_markup=_build_time_markup()
     )
     context.user_data["pending_action"] = "skewt"
@@ -372,14 +395,14 @@ async def alert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username
     
-    if add_alert(user_id, username, city, lat, lon):
-        text = (f"✅ *Подписка активирована!*\n\n📍 {city}\n\n"
+    if add_alert(user_id, username, city.strip(), lat, lon):
+        text = (f"✅ *Подписка активирована!*\n\n📍 {md(city)}\n\n"
                 "Бот будет проверять условия каждые 30 минут и предупреждать "
                 "о риске организованных гроз или суперячеек.\n\n"
-                f"Отписаться: `/unalert {city}`")
+                f"Отписаться: `/unalert {md(city)}`")
         await update.message.reply_text(text, parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"ℹ️ Подписка на {city} уже активна.")
+        await update.message.reply_text(f"ℹ️ Подписка на {md(city)} уже активна.", parse_mode="Markdown")
 
 async def unalert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -387,9 +410,9 @@ async def unalert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     city = " ".join(context.args)
     if remove_alert(update.effective_user.id, city):
-        await update.message.reply_text(f"✅ Подписка на {city} удалена.")
+        await update.message.reply_text(f"✅ Подписка на {md(city)} удалена.", parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"ℹ️ Подписка на {city} не найдена.")
+        await update.message.reply_text(f"ℹ️ Подписка на {md(city)} не найдена.", parse_mode="Markdown")
 
 async def alerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -402,62 +425,46 @@ async def alerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    lines = [f"📬 *Твои подписки ({len(alerts)}):*\n"]
-    
+    text = await _alerts_list_text(alerts)
+    await update.effective_message.reply_text(text, parse_mode="Markdown")
+
+
+async def _alerts_list_text(alerts) -> str:
+    """Список подписок с индикатором угрозы (общий для /alerts и кнопки)."""
+    lines = ["\U0001f4ec *Твои подписки (" + str(len(alerts)) + "):*\n"]
     for alert in alerts:
         city = alert["city"]
         lat, lon = alert.get("lat"), alert.get("lon")
-        threat = "⚪"
+        threat = "\u26aa"
         if lat and lon:
             try:
-                om_data = weather_api.get_current(lat, lon)
-                pressure_data_raw = weather_api.get_pressure_levels(lat, lon)
+                om_data = await asyncio.to_thread(weather_api.get_current, lat, lon)
+                pressure_data_raw = await asyncio.to_thread(weather_api.get_pressure_levels, lat, lon)
                 current_data = {"current": om_data["current"]}
                 pressure_data_dict = {"hourly": pressure_data_raw.get("hourly", {})}
                 report = build_storm_report(current_data, pressure_data_dict)
                 t = report.get("threat_level", 0) or 0
-                threat = ["⚪", "🟢", "🟡", "🟠", "🔴", "⚫"][min(t, 5)]
-            except Exception:
-                threat = "⚪"
-        lines.append(f"{threat} {city}")
-
+                threat = ["\u26aa", "\U0001f7e2", "\U0001f7e1", "\U0001f7e0", "\U0001f534", "\u26ab"][min(t, 5)]
+            except Exception as e:
+                logger.warning(f"Threat check failed for {city}: {e}")
+                threat = "\u26aa"
+        lines.append(f"{threat} {md(city)}")
     lines.append("\n_Отписаться:_ `/unalert город`")
-    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
+    return "\n".join(lines)
 
-    lines.append("\n_Отписаться:_ `/unalert город`")
-    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
+
     if query.data == "alerts":
-        await query.answer()
         user_id = update.effective_user.id
         alerts = get_user_alerts(user_id)
         if not alerts:
-            text = "📭 У тебя нет активных подписок.\n\n"
+            text = "\U0001f4ed У тебя нет активных подписок.\n\n"
             text += "Подписаться: `/alert Москва`"
         else:
-            lines = [f"📬 *Твои подписки ({len(alerts)}):*\n"]
-            for alert in alerts:
-                city = alert["city"]
-                lat, lon = alert.get("lat"), alert.get("lon")
-                threat = "⚪"
-                if lat and lon:
-                    try:
-                        om_data = weather_api.get_current(lat, lon)
-                        pressure_data_raw = weather_api.get_pressure_levels(lat, lon)
-                        current_data = {"current": om_data["current"]}
-                        pressure_data_dict = {"hourly": pressure_data_raw.get("hourly", {})}
-                        report = build_storm_report(current_data, pressure_data_dict)
-                        t = report.get("threat_level", 0) or 0
-                        threat = ["⚪", "🟢", "🟡", "🟠", "🔴", "⚫"][min(t, 5)]
-                    except Exception:
-                        threat = "⚪"
-                lines.append(f"{threat} {city}")
-            lines.append("\n_Отписаться:_ `/unalert город`")
-            text = "\n".join(lines)
+            text = await _alerts_list_text(alerts)
         await query.message.reply_text(text, parse_mode="Markdown")
         return
 
@@ -481,7 +488,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             context.user_data.pop("pending_message_id", None)
         
-        calc_msg = await query.message.reply_text(f"⏳ Считаю для *{city}* на {time_info['label']}...", parse_mode="Markdown")
+        calc_msg = await query.message.reply_text(f"⏳ Считаю для *{md(city)}* на {time_info['label']}...", parse_mode="Markdown")
         
         if action == "storm":
             await _send_storm_report(query.message, lat, lon, city, time_idx, time_info["label"], context)
@@ -505,7 +512,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         markup = _build_stations_markup(probe)
         
         if query.data == "stn:__model__":
-            chart = build_skewt_chart(current, hourly, None, None, city, time_label, report=report)
+            chart = await asyncio.to_thread(
+                build_skewt_chart, current, hourly, None, None, city, time_label, report=report
+            )
             await query.edit_message_media(
                 InputMediaPhoto(chart, caption=f"📈 Skew-T: модель {city} ({time_label})"), 
                 reply_markup=markup
@@ -514,14 +523,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         wmo = query.data[4:]
         meta = next((s for s in probe if s["wmo"] == wmo), None)
-        df, rt = get_sounding_by_wmo(wmo)
+        df, rt = await asyncio.to_thread(get_sounding_by_wmo, wmo)
         
         if df is None:
             await query.answer("Нет данных на этой станции.", show_alert=True)
             return
             
         station_name = meta["name"] if meta else "Зонд"
-        chart = build_skewt_chart(current, hourly, df, rt, city, time_label, station_name=station_name, report=report)
+        chart = await asyncio.to_thread(
+            build_skewt_chart, current, hourly, df, rt, city, time_label,
+            station_name=station_name, report=report
+        )
         cap = f"📈 Skew-T: {city} ({time_label}) + зонд {station_name} (~{meta['dist_km']} км)" if meta else f"📈 Skew-T: {city} ({time_label}) + зонд"
         
         await query.edit_message_media(InputMediaPhoto(chart, caption=cap), reply_markup=markup)
@@ -557,15 +569,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if target:
         lat, lon, city = target
         if query.data == "storm":
-            msg = await query.message.reply_text(f"⏳ Выбери время для *{city}*:", parse_mode="Markdown", reply_markup=_build_time_markup())
+            msg = await query.message.reply_text(f"⏳ Выбери время для *{md(city)}*:", parse_mode="Markdown", reply_markup=_build_time_markup())
             context.user_data["pending_action"] = "storm"
             context.user_data["pending_message_id"] = msg.message_id
         elif query.data == "skewt":
-            msg = await query.message.reply_text(f"⏳ Выбери время для *{city}*:", parse_mode="Markdown", reply_markup=_build_time_markup())
+            msg = await query.message.reply_text(f"⏳ Выбери время для *{md(city)}*:", parse_mode="Markdown", reply_markup=_build_time_markup())
             context.user_data["pending_action"] = "skewt"
             context.user_data["pending_message_id"] = msg.message_id
         elif query.data == "radar":
-            await query.message.reply_text(f"📡 Загружаю радар для *{city}*...", parse_mode="Markdown")
+            await query.message.reply_text(f"📡 Загружаю радар для *{md(city)}*...", parse_mode="Markdown")
             await _send_radar(query.message, lat, lon, city, context)
         elif query.data == "help":
             await help_command(update, context)
@@ -575,6 +587,46 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"Сетевая ошибка: {context.error}")
     else:
         logger.error(f"Ошибка: {context.error}", exc_info=context.error)
+
+_ALERT_CHECK_INTERVAL_SECONDS = 30 * 60
+
+
+async def alerts_background_task(context: ContextTypes.DEFAULT_TYPE):
+    """Каждые 30 минут проверяет опасные условия для всех подписок и рассылает алерты."""
+    try:
+        alerts = get_all_alerts()
+    except Exception as e:
+        logger.error(f"Alert job: не удалось получить список подписок: {e}")
+        return
+
+    for alert in alerts:
+        user_id, city = alert["user_id"], alert["city"]
+        lat, lon = alert["lat"], alert["lon"]
+        try:
+            if not can_send_alert(user_id, city):
+                continue
+            current_data, pressure_data, _ = await asyncio.to_thread(
+                _get_fused_current_data, lat, lon, 0
+            )
+            report = build_storm_report(current_data, pressure_data)
+            danger = check_dangerous_conditions(report)
+            if not danger:
+                continue
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"{danger}\n\n"
+                    f"📍 *{md(city)}* — {datetime.now(timezone.utc).strftime('%H:%M UTC')}\n"
+                    f"Подробнее: `/storm {md(city)}`"
+                ),
+                parse_mode="Markdown",
+            )
+            record_alert_sent(user_id, city)
+        except Exception as e:
+            logger.warning(f"Alert job failed for {city} (user {user_id}): {e}")
+        # Пауза между подписками, чтобы не упереться в rate-limit внешних API
+        await asyncio.sleep(2)
+
 
 def build_application() -> Application:
     os.makedirs("data", exist_ok=True)
@@ -601,10 +653,23 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_error_handler(error_handler)
-    
+
+    # Фоновая задача рассылки алертов (подписки /alert)
+    application.job_queue.run_repeating(
+        alerts_background_task,
+        interval=_ALERT_CHECK_INTERVAL_SECONDS,
+        first=60,
+        name="alerts_check",
+    )
+
     return application
 
 def main():
+    if not BOT_TOKEN:
+        raise RuntimeError(
+            "BOT_TOKEN не найден. Создай файл .env на основе .env.example "
+            "и укажи токен бота."
+        )
     logger.info("Запуск метеобота...")
     MIN_UPTIME_SECONDS = 30
     MAX_CONSECUTIVE_FAST_FAILURES = 5
