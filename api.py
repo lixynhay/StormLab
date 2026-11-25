@@ -1,14 +1,15 @@
 import io
 import logging
+import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
-from config import API_TIMEOUT
+from config import API_ACCESS_KEY, API_TIMEOUT
 from openmeteo_api import OpenMeteoAPI
 from openweathermap_api import OpenWeatherMapAPI
 from data_fusion import fuse_current_weather
@@ -36,11 +37,30 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+    if request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        if not API_ACCESS_KEY:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "API доступ закрыт"},
+            )
+
+        supplied_key = request.headers.get("X-API-Key")
+        if not supplied_key or not secrets.compare_digest(supplied_key, API_ACCESS_KEY):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Недействительный ключ доступа"},
+            )
+
+    return await call_next(request)
 
 class StormReportResponse(BaseModel):
     city: str
