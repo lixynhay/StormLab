@@ -4,11 +4,12 @@ import hmac
 import hashlib
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
 from config import API_ACCESS_KEY, API_HOST, API_TIMEOUT
@@ -48,6 +49,13 @@ app.add_middleware(
 
 REST_RATE_LIMIT = 60
 _rest_rate_limits = {}
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def documentation():
+    """Serve the interactive API documentation; the page itself is public."""
+    docs_path = Path(__file__).with_name("api_docs.html")
+    return HTMLResponse(docs_path.read_text(encoding="utf-8"))
 
 
 def _api_key_matches(supplied_key: str, configured_key: str) -> bool:
@@ -123,7 +131,7 @@ def _get_fused_data(lat: float, lon: float, time_index: int):
     om_data = weather_api.get_current(lat, lon)
     pressure_data_raw = weather_api.get_pressure_levels(lat, lon)
     hourly_full = pressure_data_raw.get("hourly", {})
-    
+
     sliced_hourly = {}
     for key, values in hourly_full.items():
         if isinstance(values, list) and len(values) > time_index:
@@ -131,12 +139,12 @@ def _get_fused_data(lat: float, lon: float, time_index: int):
             sliced_hourly[key] = [val] if val is not None else [None]
         else:
             sliced_hourly[key] = values
-    
+
     surface_pressure = om_data["current"].get("surface_pressure")
     if surface_pressure is None:
         sp_list = hourly_full.get("surface_pressure", [None])
         surface_pressure = sp_list[0] if sp_list else 1013.25
-    
+
     if time_index == 0:
         owm_current = None
         try:
@@ -154,7 +162,7 @@ def _get_fused_data(lat: float, lon: float, time_index: int):
             "wind_direction_10m": sliced_hourly.get("wind_direction_10m", [None])[0],
         }
         source_label = "Open-Meteo (Прогноз)"
-    
+
     return {"current": fused}, {"hourly": sliced_hourly}, source_label
 
 @app.get("/api/health")
@@ -183,7 +191,7 @@ async def get_storm_report(
         report = build_storm_report(current_data, pressure_data)
         timestamp_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         formatted_text = format_storm_text(report, city, timestamp_str)
-        
+
         return StormReportResponse(
             city=city,
             timestamp=timestamp_str,
@@ -206,10 +214,10 @@ async def get_profile_chart(
     try:
         _, pressure_data, _ = _get_fused_data(lat, lon, time_index)
         chart = build_profile_chart(pressure_data, city, f"t+{time_index}ч")
-        
+
         if chart is None:
             raise HTTPException(status_code=500, detail="Не удалось построить график")
-        
+
         return StreamingResponse(chart, media_type="image/png")
     except Exception as e:
         logger.error(f"Ошибка построения графика: {e}", exc_info=True)
@@ -228,12 +236,12 @@ async def get_skewt_chart(
         report = build_storm_report(current_data, pressure_data)
         current = current_data["current"]
         hourly = pressure_data["hourly"]
-        
+
         chart = build_skewt_chart(current, hourly, None, None, city, f"t+{time_index}ч", report=report)
-        
+
         if chart is None:
             raise HTTPException(status_code=500, detail="Не удалось построить Skew-T")
-        
+
         return StreamingResponse(chart, media_type="image/png")
     except Exception as e:
         logger.error(f"Ошибка построения Skew-T: {e}", exc_info=True)
@@ -250,11 +258,11 @@ async def get_radar(
         radar_path, timestamp_utc, is_cached = get_latest_radar_frame()
         if radar_path is None:
             raise HTTPException(status_code=503, detail="Радар временно недоступен")
-        
+
         radar_image = build_radar_image(lat, lon, radar_path)
         if radar_image is None:
             raise HTTPException(status_code=500, detail="Не удалось построить изображение радара")
-        
+
         return StreamingResponse(radar_image, media_type="image/png", headers={
             "X-Radar-Timestamp": timestamp_utc.isoformat(),
             "X-Radar-Cached": str(is_cached).lower()
@@ -269,10 +277,10 @@ async def get_ai_analysis(request: AIAnalysisRequest):
     try:
         current_data, pressure_data, _ = _get_fused_data(request.lat, request.lon, request.time_index)
         report = build_storm_report(current_data, pressure_data)
-        
+
         skewt_ctx = build_skewt_context_for_ai(report, current_data["current"], pressure_data)
         analysis = generate_storm_analysis(report, request.city, skewt_ctx)
-        
+
         return AIAnalysisResponse(
             city=request.city,
             analysis=analysis,
