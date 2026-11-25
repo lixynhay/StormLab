@@ -58,7 +58,7 @@ THRESHOLDS = {
 
 Алерт формируется при совпадении ≥3 условий либо при сочетании CAPE ≥ 2000 Дж/кг + сдвиг ≥ 20 м/с (риск суперячеек).
 
-> ⚠️ **Статус:** функции проверки (`check_dangerous_conditions`, `get_all_alerts`, `can_send_alert`, `record_alert_sent`) реализованы, но периодическая задача опроса (JobQueue каждые 30 минут) пока **не подключена** к `bot.py`. Подписки собираются, автоматическая рассылка не выполняется.
+> ✅ **Статус:** рассылка полностью подключена — фоновая задача `alerts_background_task` запускается через `JobQueue.run_repeating` в `bot.py` каждые 30 минут (первый запуск через 60 с после старта). Для каждой подписки обновляются данные, считается отчёт, и при опасной обстановке пользователю приходит уведомление с кулдауном 2 часа; между подписками выдерживается пауза 2 с для защиты от rate-limit внешних API.
 
 ---
 
@@ -72,7 +72,7 @@ THRESHOLDS = {
 - **API**: Open-Meteo (основной источник), OpenWeatherMap (фьюжн приземных данных), RainViewer (радар)
 - **AI**: цепочка fallback Groq (llama-3.3-70b) → GitHub Models (gpt-4o-mini) → Gemini → OpenRouter → LocalProvider (rule-based анализ без внешних API)
 - **Логирование**: `colorlog` + ротационный файл `bot.log` (5 МБ × 3 бэкапа)
-- **REST API** (опционально): `api.py` на FastAPI — требует дополнительно `fastapi` и `uvicorn` (в `requirements.txt` отсутствуют)
+- **REST API**: `api.py` на FastAPI + Uvicorn (`fastapi`, `uvicorn` включены в `requirements.txt`)
 
 ---
 
@@ -97,10 +97,7 @@ pip install -r requirements.txt
 ```
 *(Рекомендуется использовать `--only-binary=:all:` для избежания компиляции C-расширений на свежих версиях Python).*
 
-Для REST API дополнительно:
-```bash
-pip install fastapi uvicorn
-```
+Все зависимости REST API (`fastapi`, `uvicorn`) уже входят в `requirements.txt` — отдельная установка не требуется.
 
 ### 4. Настройка окружения
 Скопируйте шаблон `.env.example` в `.env` и заполните значения. Обязателен только `BOT_TOKEN`, остальное — опционально:
@@ -112,6 +109,7 @@ GEMINI_API_KEY=ключ_Google_AI           # опционально (AI, при
 OPENROUTER_API_KEY=ключ_OpenRouter      # опционально (AI, приоритет 4)
 OPENWEATHERMAP_API_KEY=ключ_OWM         # опционально (фьюжн приземных данных)
 API_ACCESS_KEY=длинный_случайный_ключ   # обязательно для REST API
+API_HOST=127.0.0.1                      # опционально (хост для python api.py)
 ADMIN_USER_IDS=123456,789012            # опционально (id админов, bypass лимитов запросов)
 ```
 В `.env.example` также присутствуют зарезервированные переменные AiTunnel (`AITUNNEL_API_KEY/BASE_URL/MODEL`) — в текущей версии `config.py` они не читаются.
@@ -123,13 +121,21 @@ python bot.py
 ```
 Бот содержит встроенный цикл авто-рестарта (задержка `RESTART_DELAY_SECONDS`, защита от fast-fail циклов: после 5 подряд быстрых падений процесс завершается).
 
-Запуск REST API (при установленных fastapi/uvicorn):
+Запуск REST API:
 ```bash
-python api.py   # uvicorn, порт 8000
+python api.py   # uvicorn, порт 8000, хост из переменной API_HOST (по умолчанию 127.0.0.1)
 ```
 
-К эндпоинтам `/api/*`, кроме `/api/health`, требуется заголовок `X-API-Key`.
-Если `API_ACCESS_KEY` не задан, эти эндпоинты закрыты с ответом `401`.
+- `GET /` — публичная интерактивная страница документации (`api_docs.html`); Swagger/ReDoc/OpenAPI отключены.
+- К остальным эндпоинтам `/api/*`, кроме публичного `/api/health`, требуется заголовок `X-API-Key`. Если `API_ACCESS_KEY` не задан — ответ `401`.
+- Действует rate-limit `REST_RATE_LIMIT = 60` запросов в минуту на ключ (сверх лимита — `429`).
+
+Эндпоинты: `/api/health`, `/api/geocode`, `/api/storm`, `/api/chart/profile`, `/api/chart/skewt`, `/api/radar`, `POST /api/ai-analysis`, `/api/time-offsets`.
+
+### 6. Тесты
+```bash
+pytest test_api_auth.py -v
+```
 
 ---
 
@@ -139,8 +145,10 @@ python api.py   # uvicorn, порт 8000
 
 ```text
 StormLab/
- ├── bot.py                    # Точка входа: хендлеры команд, inline-клавиатуры, авто-рестарт
- ├── api.py                    # Опциональный REST API на FastAPI
+ ├── bot.py                    # Точка входа: хендлеры команд, inline-клавиатуры, JobQueue алертов, авто-рестарт
+ ├── api.py                    # REST API на FastAPI (auth по X-API-Key, rate-limit)
+ ├── api_docs.html             # Публичная HTML-страница документации к REST API (отдаётся на GET /)
+ ├── test_api_auth.py          # pytest-тесты REST API (публичная документация, health, проверка ключа и лимитов)
  ├── config.py                 # Централизованная конфигурация из .env
  ├── logging_config.py         # Логирование с ротацией (bot.log)
  ├── storm_indices.py          # Расчёт всех метеорологических индексов (SPC standards)
@@ -154,11 +162,11 @@ StormLab/
  ├── radar_builder.py          # Склейка тайлов радара 3×3 и кроп вокруг города
  ├── ai_analysis.py            # Промпт и генерация AI-анализа
  ├── ai_providers.py           # Цепочка провайдеров: Groq/GitHub/Gemini/OpenRouter/Local
- ├── alert_manager.py          # Подписки на алерты (SQLite, thresholds, кулдаун 2 ч)
+ ├── alert_manager.py          # Подписки на алерты (SQLite, thresholds, кулдаун 2 ч, prune истории)
  ├── rate_limiter.py           # Кулдауны по командам (storm 30с, skewt/ai 60с, radar 300с; admin bypass)
  ├── geocoding.py              # Геокодер Open-Meteo с кэшем
- ├── requirements.txt          # Зависимости Python
- └── data/                     # SQLite БД и кэш (создаётся автоматически, не коммитится)
+ ├── requirements.txt          # Зависимости Python (включая fastapi/uvicorn и pytest)
+ └── data/                     # SQLite БД, persistence.pkl и кэш (создаётся автоматически, не коммитится)
 ```
 
 ---
@@ -190,19 +198,17 @@ StormLab/
 3. **Кэширование**: TTL-кэш ответов Open-Meteo, кэш геокодера, кэш каталога станций IGRA2 (7 дней), кэш радарных фреймов.
 4. **Rate limiting**: in-memory кулдауны на каждую команду (`rate_limiter.py`), обход для `ADMIN_USER_IDS`.
 5. **Лимиты Telegram**: callback-данные оптимизированы (макс. 64 байта) за счёт хранения контекста в `user_data`.
-6. **Отказоустойчивость**: `bot.py` перезапускает Application при падениях с защитой от бесконечных fast-fail циклов.
+6. **Отказоустойчивость**: `bot.py` перезапускает Application при падениях с защитой от бесконечных fast-fail циклов; запросы к Open-Meteo защищены `CircuitBreaker` (после 3 подряд неудач «открывается» на 5 минут), ретраями и переиспользованием TCP/TLS-сессий (`requests.Session`).
+7. **Безопасность REST API**: сравнение ключа через `hmac.compare_digest`, оконный rate-limit по хэшу ключа, отключённые Swagger/ReDoc в пользу собственной страницы документации.
 
 ---
 
 ## 🐛 Известные ограничения
 
-- Автоматическая рассылка алертов не подключена (нет периодической задачи в JobQueue) — см. раздел «Система алертов».
 - Высоты рассчитываются из стандартной атмосферы, а не из реальных данных (ограничение модельных API).
 - Радар RainViewer иногда недоступен во время глобальных обновлений их серверов.
 - AI-анализ зависит от доступности и квот внешних API (автоматически переключается на fallback-провайдеров вплоть до локального анализа).
-- Юнит-тесты в репозитории отсутствуют (pytest-зависимости в requirements.txt есть, тестов нет).
-- В `skewt_builder.py` есть баг: при отрисовке wind barbs используется неопределённая переменная `BARB_COLOR` (ошибка перехватывается try/except, но барбы не отображаются).
-- Класс `CircuitBreaker` в `openmeteo_api.py` определён, но нигде не используется.
+- Покрытое тестами только REST API (`test_api_auth.py`); расчёт индексов, визуализация и логика алертов полноценных unit-тестов не имеют (в `alert_manager.py` есть лишь встроенная самопроверка порогов `_self_check()`).
 - **Дисклеймер**: Расчёт по доступному модельному профилю. Не заменяет официальный прогноз метеослужб.
 
 ---
