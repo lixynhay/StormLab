@@ -38,11 +38,15 @@
 **Композитные индексы (шторм-чейзинг):**
 - **STP** (Significant Tornado Parameter) — риск торнадо (использует MLCAPE)
 - **SCP** (Supercell Composite) — потенциал суперячеек (использует MUCAPE)
+- **STP(eff) / SCP(eff)** — дополнительные композиты по SPC effective layer; при отсутствии effective layer остаются `н/д`, а fixed-layer STP/SCP выводятся как ранее
 - **DCAPE** (Downdraft CAPE) — риск микропорывов/шквалов (metpy `downdraft_cape_cin` + ручной fallback с виртуальной температурой)
 - EHI (Energy-Helicity Index, CAPE 0-3 км), BRN (Bulk Richardson Number)
 - MCS Maintenance — устойчивость линий шквалов
 
 **Уровень угрозы:** визуальная шкала 0-5 с учётом всех параметров (`calculate_threat_level`).
+
+### Сезонный режим
+Для грозового отчёта режим определяется по широте и месяцу: cool — ноябрь–март от 45° и апрель/октябрь от 55°; в остальных случаях warm. Пороги warm: CAPE 1000, shear 0-6 км 15 м/с, LCL 1500 м, CIN 150; cool: CAPE 200, shear 20 м/с, LCL 2500 м, CIN 100. В cool сочетание CAPE ≥ 200 и shear ≥ 20 м/с добавляет балл угрозы; при таком сочетании выводится предупреждение о проверке прокси thundersnow/snow-squall.
 
 ### Система алертов
 Подписки хранятся в SQLite (`data/alerts.db`, таблицы `alerts` и `alert_history`, кулдаун повторной отправки — 2 часа). Пороги опасной погоды в `alert_manager.py`:
@@ -152,6 +156,7 @@ StormLab/
  ├── config.py                 # Централизованная конфигурация из .env
  ├── logging_config.py         # Логирование с ротацией (bot.log)
  ├── storm_indices.py          # Расчёт всех метеорологических индексов (SPC standards)
+ ├── effective_layer.py        # SPC effective layer и дополнительные STP(eff)/SCP(eff)
  ├── openmeteo_api.py          # Open-Meteo: модельные профили (6 изобарических + 12 уровней), кэш, ретраи
  ├── openweathermap_api.py     # OpenWeatherMap: текущая погода
  ├── data_fusion.py            # Обратновзвешенное слияние (inverse-variance) двух источников

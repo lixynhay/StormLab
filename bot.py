@@ -19,6 +19,7 @@ from openmeteo_api import OpenMeteoAPI
 from openweathermap_api import OpenWeatherMapAPI
 from data_fusion import fuse_current_weather
 from storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
+from season_regime import get_regime, interpret
 from chart_builder import build_profile_chart
 from ai_analysis import generate_storm_analysis
 from skewt_builder import build_skewt_chart
@@ -200,9 +201,17 @@ async def _send_storm_report(message_target, lat, lon, city, time_index, time_la
         return
     
     try:
-        report = build_storm_report(current_data, pressure_data)
+        regime = get_regime(lat, datetime.now(timezone.utc).month)
+        report = build_storm_report(current_data, pressure_data, regime=regime)
         timestamp_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
         text = format_storm_text(report, city, timestamp_str)
+        if report.get("effective_layer") is None:
+            text += "\n\neffective layer не найден, показан fixed-layer"
+        season_lines = interpret(
+            regime, report.get("cape", 0) or 0, report.get("bulk_shear_06", 0) or 0
+        )
+        if season_lines:
+            text += "\n\n" + "\n".join(season_lines)
         text += f"\n_Время: {time_label} | Данные: {source_label}_"
     except Exception as e:
         logger.error(f"Ошибка расчёта: {e}", exc_info=True)
@@ -240,7 +249,8 @@ async def _send_skewt(message_target, lat, lon, city, time_index, time_label, co
         return
     
     try:
-        report = build_storm_report(current_data, pressure_data)
+        regime = get_regime(lat, datetime.now(timezone.utc).month)
+        report = build_storm_report(current_data, pressure_data, regime=regime)
     except Exception as e:
         logger.warning(f"Storm report failed in skewt: {e}")
         report = None
@@ -304,7 +314,8 @@ async def _send_ai_analysis(message_target, context):
         time_label = "Сейчас"
         try:
             current_data, pressure_data, _ = await asyncio.to_thread(_get_fused_current_data, lat, lon, 0)
-            report = build_storm_report(current_data, pressure_data)
+            regime = get_regime(lat, datetime.now(timezone.utc).month)
+            report = build_storm_report(current_data, pressure_data, regime=regime)
         except Exception as e:
             logger.error(f"AI analysis data fetch failed: {e}")
             await message_target.reply_text("❌ Не удалось получить данные для анализа.")
@@ -460,7 +471,10 @@ async def _alerts_list_text(alerts) -> str:
                 pressure_data_raw = await asyncio.to_thread(weather_api.get_pressure_levels, lat, lon)
                 current_data = {"current": om_data["current"]}
                 pressure_data_dict = {"hourly": pressure_data_raw.get("hourly", {})}
-                report = build_storm_report(current_data, pressure_data_dict)
+                regime = get_regime(lat, datetime.now(timezone.utc).month)
+                report = build_storm_report(
+                    current_data, pressure_data_dict, regime=regime
+                )
                 t = report.get("threat_level", 0) or 0
                 threat = ["\u26aa", "\U0001f7e2", "\U0001f7e1", "\U0001f7e0", "\U0001f534", "\u26ab"][min(t, 5)]
             except Exception as e:
@@ -627,7 +641,8 @@ async def alerts_background_task(context: ContextTypes.DEFAULT_TYPE):
             current_data, pressure_data, _ = await asyncio.to_thread(
                 _get_fused_current_data, lat, lon, 0
             )
-            report = build_storm_report(current_data, pressure_data)
+            regime = get_regime(lat, datetime.now(timezone.utc).month)
+            report = build_storm_report(current_data, pressure_data, regime=regime)
             danger = check_dangerous_conditions(report)
             if not danger:
                 continue

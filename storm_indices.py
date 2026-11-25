@@ -3,6 +3,14 @@ import numpy as np
 import metpy.calc as mpcalc
 from metpy.units import units
 
+from effective_layer import (
+    find_effective_layer,
+    effective_srh,
+    effective_bulk_shear,
+    stp_effective,
+    scp_effective,
+)
+
 logger = logging.getLogger(__name__)
 
 PRESSURE_LEVELS = [1000, 925, 850, 700, 500, 300]
@@ -480,12 +488,16 @@ def calculate_hodograph_shear_srh(current, hourly, pressure_levels):
         try:
             right_mover, _, _ = mpcalc.bunkers_storm_motion(p, u, v, heights)
             storm_u, storm_v = right_mover[0], right_mover[1]
+            result["storm_motion_u"] = float(storm_u.to("m/s").magnitude)
+            result["storm_motion_v"] = float(storm_v.to("m/s").magnitude)
             result["srh_method"] = "Bunkers (right-mover)"
         except Exception as e:
             logger.warning(f"Bunkers fallback: {e}")
             mean_u = np.mean(u)
             mean_v = np.mean(v)
             storm_u, storm_v = mean_u, mean_v
+            result["storm_motion_u"] = float(storm_u.to("m/s").magnitude)
+            result["storm_motion_v"] = float(storm_v.to("m/s").magnitude)
             result["srh_method"] = "оценка (средний ветер 0-6км)"
 
         _, _, srh_total = mpcalc.storm_relative_helicity(heights, u, v, depth=depth_03, storm_u=storm_u, storm_v=storm_v)
@@ -579,7 +591,12 @@ def calculate_brn(cape, bulk_shear_06):
     except Exception:
         return None
 
-def calculate_threat_level(k, tt, li, cape=0, cin=0, shear_06=0, ehi=0):
+def calculate_threat_level(
+    k, tt, li, cape=0, cin=0, shear_06=0, ehi=0, regime="warm", thresholds=None
+):
+    from season_regime import thresholds_for
+
+    thresholds = thresholds_for(regime) if thresholds is None else thresholds
     score = 0
     cin_abs = abs(cin) if cin else 0
     if cape >= 250: score += 1
@@ -589,8 +606,14 @@ def calculate_threat_level(k, tt, li, cape=0, cin=0, shear_06=0, ehi=0):
     if tt >= 50: score += 1
     if li <= -3: score += 1
     if shear_06 >= 15 and cape >= 750: score += 1
+    if (
+        regime == "cool"
+        and cape >= thresholds["cape_min"]
+        and shear_06 >= thresholds["shear06_min"]
+    ):
+        score += 1
     if shear_06 < 7: score -= 1
-    if cin_abs > 250: score -= 1
+    if cin_abs > (thresholds["cin_max"] if regime == "cool" else 250): score -= 1
     if cape < 250 and score > 2: score -= 1
     if ehi is not None and ehi < 0: score -= 1  # Отрицательный EHI (левый суперячейковый режим) снижает риск
     return max(0, min(score, 5))
@@ -598,7 +621,7 @@ def calculate_threat_level(k, tt, li, cape=0, cin=0, shear_06=0, ehi=0):
 def _threat_bar(level: int) -> str:
     return "🟥" * level + "⬜" * (5 - level)
 
-def build_storm_report(current_data: dict, pressure_data: dict) -> dict:
+def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", thresholds=None) -> dict:
     current = current_data["current"]
     hourly = pressure_data.get("hourly", {})
     report = {}
@@ -704,6 +727,73 @@ def build_storm_report(current_data: dict, pressure_data: dict) -> dict:
     )
     report["scp_interpretation"] = interpret_scp(report["scp"])
 
+    effective_profile = None
+    if len(profile_pressure) >= 2:
+        pressures = np.array(profile_pressure) * units.hPa
+        temperatures = np.array(profile_temp) * units.degC
+        dewpoints = np.array(profile_dewpoint) * units.degC
+        heights = mpcalc.pressure_to_height_std(pressures)
+
+        pressures_wind, speeds_wind, dirs_wind = build_wind_profile(current, hourly, PRESSURE_LEVELS)
+        wind_u = wind_v = None
+        if len(pressures_wind) >= 2:
+            wp = np.array(pressures_wind) * units.hPa
+            speed = np.array(speeds_wind) * units("m/s")
+            direction = np.array(dirs_wind) * units.deg
+            wind_u, wind_v = mpcalc.wind_components(speed, direction)
+            wind_heights = mpcalc.pressure_to_height_std(wp).to("m").magnitude
+            therm_heights = heights.to("m").magnitude
+            effective_profile = {
+                "z": therm_heights,
+                "u": np.interp(therm_heights, wind_heights, wind_u.to("m/s").magnitude),
+                "v": np.interp(therm_heights, wind_heights, wind_v.to("m/s").magnitude),
+                "p": pressures.to("hPa").magnitude,
+                "T": temperatures.to("degC").magnitude,
+                "Td": dewpoints.to("degC").magnitude,
+            }
+
+        mucape = mllcl = mlcin = None
+        try:
+            mucape_qty, mucin_qty = mpcalc.most_unstable_cape_cin(
+                pressures, temperatures, dewpoints, depth=300 * units.hPa
+            )
+            mucape = float(mucape_qty.magnitude) if mucape_qty is not None else 0.0
+        except Exception:
+            pass
+        try:
+            ml_t, ml_td = mpcalc.mix(
+                pressures[:5], temperatures[:5], dewpoints[:5], depth=100 * units.hPa
+            )
+            ml_lcl_p, _ = mpcalc.lcl(pressures[0], ml_t, ml_td)
+            mllcl = float(lcl_pressure_to_height(ml_lcl_p.magnitude) or 0)
+            mlcape_qty, mlcin_qty = mpcalc.mixed_layer_cape_cin(
+                pressures, temperatures, dewpoints, depth=100 * units.hPa
+            )
+            mlcin = float(mlcin_qty.magnitude) if mlcin_qty is not None else 0.0
+        except Exception:
+            pass
+
+        effective_layer = find_effective_layer(effective_profile) if effective_profile is not None else None
+        if effective_layer is not None:
+            z_bot, z_top = effective_layer
+            storm_motion = (
+                report.get("storm_motion_u", 0),
+                report.get("storm_motion_v", 0),
+            )
+            esrh = effective_srh(effective_profile, z_bot, z_top, storm_motion)
+            ebwd = effective_bulk_shear(effective_profile, z_bot, z_top)
+            report["stp_eff"] = stp_effective(mucape, mllcl, esrh, ebwd, mlcin)
+            report["scp_eff"] = scp_effective(mucape, esrh, ebwd)
+            report["effective_layer"] = (z_bot, z_top)
+        else:
+            report["stp_eff"] = None
+            report["scp_eff"] = None
+            report["effective_layer"] = None
+    else:
+        report["stp_eff"] = None
+        report["scp_eff"] = None
+        report["effective_layer"] = None
+
     if len(profile_pressure) >= 2:
         report["dcape"] = calculate_dcape(profile_pressure, profile_temp, profile_dewpoint)
     else:
@@ -727,7 +817,8 @@ def build_storm_report(current_data: dict, pressure_data: dict) -> dict:
     
     report["threat_level"] = calculate_threat_level(
         k_index, total_totals, li_for_calc,
-        cape=cape, cin=cin, shear_06=shear_06, ehi=ehi
+        cape=cape, cin=cin, shear_06=shear_06, ehi=ehi,
+        regime=regime, thresholds=thresholds
     )
 
     return report
@@ -756,7 +847,9 @@ def format_storm_text(report: dict, city: str, timestamp_str: str) -> str:
         f"• SRH 0-3км: *{report.get('srh')}* м²/с² ({report.get('srh_method')})\n\n"
         f"🎯 *Композитные (Шторм-чейзинг)*\n"
         f"• STP (торнадо): *{report.get('stp', 'н/д')}* — {report.get('stp_interpretation')}\n"
+        f"• STP(eff): *{report.get('stp_eff', 'н/д')}*\n"
         f"• SCP (суперячейки): *{report.get('scp', 'н/д')}* — {report.get('scp_interpretation')}\n"
+        f"• SCP(eff): *{report.get('scp_eff', 'н/д')}*\n"
         f"• DCAPE (шквалы): *{report.get('dcape', 'н/д')}* Дж/кг — {report.get('dcape_interpretation')}\n"
         f"• MCS: {report.get('mcsm_interpretation')}\n\n"
         f"📊 *Дополнительно*\n"
