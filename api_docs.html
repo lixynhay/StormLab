@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>StormLab API — документация</title>
+  <style>
+    :root{color-scheme:dark;--bg:#08111f;--panel:#101d2e;--panel2:#14243a;--line:#253a55;--text:#e9f1fb;--muted:#9bb0c9;--cyan:#67d8e8;--green:#73e0b0;--yellow:#ffd479;--red:#ff8f91;--radius:16px;font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 80% -20%,#193b60 0,transparent 42%),var(--bg);color:var(--text)}a{color:var(--cyan)}header{padding:42px max(22px,calc((100vw - 1100px)/2)) 32px;border-bottom:1px solid var(--line)}.eyebrow{color:var(--cyan);font-size:.82rem;letter-spacing:.13em;text-transform:uppercase;font-weight:700}h1{font-size:clamp(2rem,5vw,3.3rem);line-height:1.15;margin:.3em 0}header p{max-width:760px;color:var(--muted);margin:0}.wrap{max-width:1100px;margin:auto;padding:26px 22px 70px}.notice{border:1px solid #6b542d;background:#332a19;border-radius:12px;padding:14px 17px;color:#ffe5ad;margin:14px 0 24px}.notice strong{color:#fff1cf}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{background:linear-gradient(145deg,var(--panel),#0d1828);border:1px solid var(--line);border-radius:var(--radius);padding:20px;min-width:0}.card.full{grid-column:1/-1}.card h2,.card h3{margin:0 0 8px;line-height:1.3}.card p,.muted{color:var(--muted)}.tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.75rem;font-weight:750;margin:0 5px 8px 0}.public{background:#153b32;color:var(--green)}.protected{background:#49381d;color:var(--yellow)}.method{font:700 .8rem ui-monospace,monospace;color:var(--cyan);margin-right:8px}code,pre{font: .9rem/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}code{color:#b4eaf3}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#07101c;border:1px solid var(--line);border-radius:10px;padding:12px;color:#c9d8e9;margin:12px 0}.keybar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:15px 0 24px}.field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:140px;margin:9px 0}.field label{font-size:.87rem;color:var(--muted)}input,select,button{font:inherit;color:var(--text);background:#091523;border:1px solid var(--line);border-radius:9px;padding:10px 12px}input:focus,select:focus{outline:2px solid #398a9c}button{background:#176677;border-color:#278598;font-weight:700;cursor:pointer}button:hover{background:#21849a}button.secondary{background:#1b2b40;border-color:var(--line)}button:disabled{opacity:.55;cursor:wait}.fields{display:grid;grid-template-columns:repeat(4,minmax(100px,1fr));gap:10px}.result{background:#07101c;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;min-height:44px;overflow:auto}.status{font-weight:750}.ok{color:var(--green)}.bad{color:var(--red)}.response{color:#cbd9e9}.result img{display:block;max-width:100%;height:auto;border-radius:8px;margin-top:10px}.actions{display:flex;gap:8px;flex-wrap:wrap}.endpoint{border-top:1px solid var(--line);padding-top:13px;margin-top:14px}.endpoint:first-of-type{border:0;padding:0}.small{font-size:.87rem}.keylabel{min-width:240px;flex:2}.keylabel input{width:100%}.copy{padding:7px 10px;font-size:.85rem}footer{color:var(--muted);border-top:1px solid var(--line);padding-top:20px;margin-top:26px}@media(max-width:720px){.grid{grid-template-columns:1fr}.card.full{grid-column:auto}.fields{grid-template-columns:repeat(2,minmax(110px,1fr))}header{padding-top:28px}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="eyebrow">🌩 StormLab · REST API</div>
+  <h1>Документация API</h1>
+  <p>Проверяйте доступность сервиса, получайте грозовые индексы и графики погоды. Интерактивные формы ниже отправляют реальные запросы текущему серверу.</p>
+</header>
+<main class="wrap">
+  <div class="notice"><strong>Безопасность для публичного развёртывания.</strong> Публичным сейчас является только <code>GET /api/health</code>. Все остальные <code>/api/*</code> требуют <code>X-API-Key</code>. Не встраивайте общий секретный ключ в публичный сайт/клиент: посетители смогут его извлечь. Для открытого публичного приложения используйте собственный серверный прокси с авторизацией, лимитами и квотами. Ключ в форме ниже хранится только в памяти этой вкладки и не записывается в localStorage.</div>
+
+  <section class="card full" aria-labelledby="try-title">
+    <h2 id="try-title">Интерактивная проверка</h2>
+    <p>Документация и health-check открыты. Для защищённых запросов введите свой ключ — он уйдёт только в заголовке HTTPS/HTTP запроса к этому серверу. На обычном HTTP в публичной сети ключ передаётся без шифрования.</p>
+    <div class="keybar">
+      <div class="field keylabel"><label for="api-key">X-API-Key (не сохраняется)</label><input id="api-key" type="password" autocomplete="off" placeholder="Введите API_ACCESS_KEY"></div>
+      <button class="secondary" id="toggle-key" type="button">Показать</button>
+      <button type="button" data-action="health">Проверить сервер (публичный)</button>
+      <button class="secondary" type="button" data-action="offsets">Проверить ключ</button>
+    </div>
+    <div id="quick-result" class="result" aria-live="polite">Результаты запросов появятся здесь.</div>
+  </section>
+
+  <h2 style="margin:28px 0 14px">Маршруты</h2>
+  <div class="grid">
+    <article class="card">
+      <span class="tag public">ПУБЛИЧНЫЙ · без ключа</span><h2><span class="method">GET</span>/api/health</h2>
+      <p>Проверка, что API запущен. Не подтверждает работоспособность внешних погодных источников.</p>
+      <pre>curl http://127.0.0.1:8000/api/health</pre>
+      <button type="button" data-action="health">Выполнить</button>
+    </article>
+    <article class="card">
+      <span class="tag protected">ТРЕБУЕТ КЛЮЧ</span><h2><span class="method">GET</span>/api/time-offsets</h2>
+      <p>Допустимые значения времени прогноза. Удобный запрос для проверки ключа.</p>
+      <pre>curl -H "X-API-Key: YOUR_KEY" http://127.0.0.1:8000/api/time-offsets</pre>
+      <button type="button" data-action="offsets">Выполнить</button>
+    </article>
+    <article class="card">
+      <span class="tag protected">ТРЕБУЕТ КЛЮЧ</span><h2><span class="method">GET</span>/api/geocode</h2>
+      <p>Поиск координат города. Возвращает название, широту и долготу.</p>
+      <div class="field"><label for="geo-query">Город</label><input id="geo-query" value="Екатеринбург" maxlength="100"></div>
+      <pre>GET /api/geocode?query=Екатеринбург</pre>
+      <button type="button" data-action="geocode">Найти координаты</button>
+    </article>
+    <article class="card">
+      <span class="tag protected">ТРЕБУЕТ КЛЮЧ</span><h2><span class="method">GET</span>/api/storm</h2>
+      <p>Грозовой отчёт с индексами, источником данных и форматированным текстом.</p>
+      <div class="fields">
+        <div class="field"><label for="storm-lat">Широта</label><input id="storm-lat" type="number" step="any" value="56.8333"></div>
+        <div class="field"><label for="storm-lon">Долгота</label><input id="storm-lon" type="number" step="any" value="60.5833"></div>
+        <div class="field"><label for="storm-city">Город</label><input id="storm-city" value="Екатеринбург"></div>
+        <div class="field"><label for="storm-time">Индекс времени</label><select id="storm-time"><option value="0">Сейчас</option><option value="1">+3 ч</option><option value="2">+6 ч</option><option value="3">+12 ч</option><option value="4">+24 ч</option></select></div>
+      </div>
+      <pre>GET /api/storm?lat=56.8333&amp;lon=60.5833&amp;city=Екатеринбург&amp;time_index=0</pre>
+      <button type="button" data-action="storm">Получить отчёт</button>
+    </article>
+    <article class="card">
+      <span class="tag protected">ТРЕБУЕТ КЛЮЧ</span><h2><span class="method">GET</span>/api/chart/profile</h2>
+      <p>PNG вертикального профиля атмосферы. Использует общие координаты и время из формы грозового отчёта.</p>
+      <pre>GET /api/chart/profile?lat=56.8333&amp;lon=60.5833&amp;city=Екатеринбург&amp;time_index=0</pre>
+      <button type="button" data-action="profile">Построить профиль</button>
+    </article>
+    <article class="card">
+      <span class="tag protected">ТРЕБУЕТ КЛЮЧ</span><h2><span class="method">GET</span>/api/chart/skewt</h2>
+      <p>PNG Skew-T Log-P диаграммы по модельному профилю. Использует общие параметры координат/времени.</p>
+      <pre>GET /api/chart/skewt?lat=56.8333&amp;lon=60.5833&amp;city=Екатеринбург&amp;time_index=0</pre>
+      <button type="button" data-action="skewt">Построить Skew-T</button>
+    </article>
+    <article class="card">
+      <span class="tag protected">ТРЕБУЕТ КЛЮЧ</span><h2><span class="method">GET</span>/api/radar</h2>
+      <p>PNG-изображение радара осадков. Время и признак кэша передаются в заголовках ответа.</p>
+      <pre>GET /api/radar?lat=56.8333&amp;lon=60.5833&amp;city=Екатеринбург</pre>
+      <button type="button" data-action="radar">Получить радар</button>
+    </article>
+    <article class="card">
+      <span class="tag protected">ТРЕБУЕТ КЛЮЧ</span><h2><span class="method">POST</span>/api/ai-analysis</h2>
+      <p>AI-анализ погодных условий. Требуется доступность хотя бы одного настроенного AI-провайдера или fallback-провайдера.</p>
+      <pre>POST /api/ai-analysis
+Content-Type: application/json
+X-API-Key: YOUR_KEY
+
+{"lat":56.8333,"lon":60.5833,"city":"Екатеринбург","time_index":0}</pre>
+      <button type="button" data-action="ai">Запустить анализ</button>
+    </article>
+  </div>
+
+  <section class="card full" style="margin-top:16px">
+    <h2>Авторизация и ответы</h2>
+    <ul>
+      <li><code>/api/health</code> — публичный endpoint, ключ не нужен.</li>
+      <li>Для всех прочих <code>/api/*</code> отправляйте <code>X-API-Key: &lt;значение API_ACCESS_KEY&gt;</code>. При пустом ключе на сервере защищённые маршруты закрыты.</li>
+      <li><code>401 Unauthorized</code> — ключ не передан/не совпал или не настроен серверный ключ; <code>429 Too many requests</code> — превышен лимит 60 запросов в минуту на ключ.</li>
+      <li>Прогнозный <code>time_index</code>: 0 — сейчас, 1 — +3 ч, 2 — +6 ч, 3 — +12 ч, 4 — +24 ч. Координаты: широта от -90 до 90, долгота от -180 до 180.</li>
+      <li>На публичном сайте нельзя безопасно раздать один общий секрет клиентскому JavaScript. Страница документации не открывает защищённые endpoints и не показывает настроенный ключ.</li>
+    </ul>
+  </section>
+  <footer>StormLab · Модельные метеоданные не заменяют официальный прогноз и предупреждения метеослужб.</footer>
+</main>
+<script>
+(() => {
+  const keyInput = document.getElementById('api-key');
+  const output = document.getElementById('quick-result');
+  let imageUrl = null;
+  document.getElementById('toggle-key').addEventListener('click', event => {
+    const visible = keyInput.type === 'text';
+    keyInput.type = visible ? 'password' : 'text';
+    event.currentTarget.textContent = visible ? 'Показать' : 'Скрыть';
+  });
+
+  function setResult(container, status, content, image = false) {
+    if (imageUrl) URL.revokeObjectURL(imageUrl);
+    imageUrl = null;
+    container.replaceChildren();
+    const line = document.createElement('div');
+    line.className = `status ${status >= 200 && status < 300 ? 'ok' : 'bad'}`;
+    line.textContent = `HTTP ${status}`;
+    container.append(line);
+    if (image) {
+      imageUrl = URL.createObjectURL(content);
+      const img = document.createElement('img');
+      img.alt = 'Изображение, полученное от API';
+      img.src = imageUrl;
+      container.append(img);
+      return;
+    }
+    const body = document.createElement('pre');
+    body.className = 'response';
+    body.textContent = content;
+    container.append(body);
+  }
+
+  async function send(path, {method = 'GET', body = null, protectedRoute = true, image = false} = {}) {
+    const headers = {};
+    if (protectedRoute) {
+      const key = keyInput.value.trim();
+      if (!key) {
+        setResult(output, 0, 'Введите API_ACCESS_KEY для этого защищённого запроса.');
+        return;
+      }
+      headers['X-API-Key'] = key;
+    }
+    if (body !== null) headers['Content-Type'] = 'application/json';
+    try {
+      const response = await fetch(path, {method, headers, body: body === null ? undefined : JSON.stringify(body)});
+      if (image && response.ok) {
+        setResult(output, response.status, await response.blob(), true);
+      } else {
+        const text = await response.text();
+        let formatted = text;
+        try { formatted = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+        setResult(output, response.status, formatted);
+      }
+    } catch (error) {
+      setResult(output, 0, `Не удалось выполнить запрос: ${error.message}`);
+    }
+  }
+
+  function locationParams(includeTime = true) {
+    const params = new URLSearchParams({
+      lat: document.getElementById('storm-lat').value,
+      lon: document.getElementById('storm-lon').value,
+      city: document.getElementById('storm-city').value
+    });
+    if (includeTime) params.set('time_index', document.getElementById('storm-time').value);
+    return params;
+  }
+
+  document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', async () => {
+    const action = button.dataset.action;
+    button.disabled = true;
+    try {
+      if (action === 'health') await send('/api/health', {protectedRoute: false});
+      if (action === 'offsets') await send('/api/time-offsets');
+      if (action === 'geocode') {
+        const params = new URLSearchParams({query: document.getElementById('geo-query').value});
+        await send(`/api/geocode?${params}`);
+      }
+      if (action === 'storm') await send(`/api/storm?${locationParams()}`);
+      if (action === 'profile' || action === 'skewt' || action === 'radar') {
+        const params = locationParams(action !== 'radar');
+        await send(`/api/${action === 'profile' ? 'chart/profile' : action === 'skewt' ? 'chart/skewt' : 'radar'}?${params}`, {image: true});
+      }
+      if (action === 'ai') {
+        await send('/api/ai-analysis', {method: 'POST', body: {
+          lat: Number(document.getElementById('storm-lat').value),
+          lon: Number(document.getElementById('storm-lon').value),
+          city: document.getElementById('storm-city').value,
+          time_index: Number(document.getElementById('storm-time').value)
+        }});
+      }
+    } finally { button.disabled = false; }
+  }));
+})();
+</script>
+</body>
+</html>
