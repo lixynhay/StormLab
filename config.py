@@ -8,8 +8,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 # BOT_TOKEN обязателен только для bot.py; REST API (api.py) работает без него.
 # Проверка перенесена в bot.main(), чтобы импорт config не падал в API-режиме.
 
-# Ключ доступа к REST API (защита эндпоинтов). Если не задан — API закрыт (403).
+# Ключ доступа к REST API (защита эндпоинтов). Если не задан — API закрыт (401).
 API_ACCESS_KEY = os.getenv("API_ACCESS_KEY")
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
 
 DEFAULT_CITY = "Екатеринбург"
 DEFAULT_LAT = 56.8333
@@ -76,4 +77,17 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-ADMIN_USER_IDS = [int(uid.strip()) for uid in os.getenv("ADMIN_USER_IDS", "").split(",") if uid.strip()]
+def _parse_admin_user_ids(value):
+    admin_ids = []
+    for uid in value.split(","):
+        uid = uid.strip()
+        if not uid:
+            continue
+        try:
+            admin_ids.append(int(uid))
+        except ValueError:
+            continue
+    return admin_ids
+
+
+ADMIN_USER_IDS = _parse_admin_user_ids(os.getenv("ADMIN_USER_IDS", ""))

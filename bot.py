@@ -61,6 +61,23 @@ def _prune_ctx():
         for k in keys[:50]:
             _skewt_ctx.pop(k, None)
 
+
+def _prune_user_data(context):
+    now = time.time()
+    last_activity = context.user_data.get("_last_activity")
+    if last_activity is not None and now - last_activity > 24 * 60 * 60:
+        context.user_data.clear()
+
+    allowed_keys = {
+        "_last_activity", "geo", "last_report", "last_storm_messages",
+        "last_skewt_messages", "pending_action", "pending_message_id",
+    }
+    for key in list(context.user_data):
+        if key not in allowed_keys:
+            context.user_data.pop(key, None)
+
+    context.user_data["_last_activity"] = now
+
 def _slice_hourly(hourly: dict, time_index: int) -> dict:
     sliced = {}
     for key, values in hourly.items():
@@ -103,6 +120,7 @@ def _get_fused_current_data(lat, lon, time_index):
     return {"current": fused}, {"hourly": sliced_hourly}, source_label
 
 async def _resolve_target(context, message_target, args=None):
+    _prune_user_data(context)
     if args:
         query = " ".join(args).strip()[:100]  # защита от чрезмерно длинных строк (DoS на геокодер)
         result = await asyncio.to_thread(resolve_city, query)
@@ -454,6 +472,7 @@ async def _alerts_list_text(alerts) -> str:
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _prune_user_data(context)
     query = update.callback_query
     await query.answer()
 

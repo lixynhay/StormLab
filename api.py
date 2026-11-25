@@ -1,15 +1,17 @@
 import io
 import logging
-import secrets
+import hmac
+import hashlib
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from config import API_ACCESS_KEY, API_TIMEOUT
+from config import API_ACCESS_KEY, API_HOST, API_TIMEOUT
 from openmeteo_api import OpenMeteoAPI
 from openweathermap_api import OpenWeatherMapAPI
 from data_fusion import fuse_current_weather
@@ -31,8 +33,9 @@ app = FastAPI(
     title="StormLab API",
     description="API для метеорологического приложения с расчётом грозовых индексов",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
@@ -43,21 +46,51 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+REST_RATE_LIMIT = 60
+_rest_rate_limits = {}
+
+
+def _api_key_matches(supplied_key: str, configured_key: str) -> bool:
+    return hmac.compare_digest(supplied_key.encode(), configured_key.encode())
+
 
 @app.middleware("http")
 async def require_api_key(request: Request, call_next):
     if request.url.path.startswith("/api/") and request.url.path != "/api/health":
         if not API_ACCESS_KEY:
             return JSONResponse(
-                status_code=403,
-                content={"detail": "API доступ закрыт"},
+                status_code=401,
+                content={"detail": "Unauthorized"},
             )
 
         supplied_key = request.headers.get("X-API-Key")
-        if not supplied_key or not secrets.compare_digest(supplied_key, API_ACCESS_KEY):
+        if not supplied_key or not _api_key_matches(supplied_key, API_ACCESS_KEY):
             return JSONResponse(
-                status_code=403,
-                content={"detail": "Недействительный ключ доступа"},
+                status_code=401,
+                content={"detail": "Unauthorized"},
+            )
+
+        now = time.time()
+        window_start = int(now // 60) * 60
+        rate_key = hashlib.sha256(supplied_key.encode()).digest()
+        counter = _rest_rate_limits.get(rate_key)
+        if counter is None or counter[0] != window_start:
+            counter = (window_start, 0)
+        count = counter[1] + 1
+        _rest_rate_limits[rate_key] = (window_start, count)
+
+        if len(_rest_rate_limits) > 1000:
+            expired = [
+                key for key, (start, _) in _rest_rate_limits.items()
+                if start != window_start
+            ]
+            for key in expired:
+                _rest_rate_limits.pop(key, None)
+
+        if count > REST_RATE_LIMIT:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests"},
             )
 
     return await call_next(request)
@@ -76,10 +109,10 @@ class GeocodeResponse(BaseModel):
     country: str
 
 class AIAnalysisRequest(BaseModel):
-    lat: float
-    lon: float
-    city: str
-    time_index: int = 0
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    city: str = Field(min_length=1, max_length=100)
+    time_index: int = Field(default=0, ge=0, le=4)
 
 class AIAnalysisResponse(BaseModel):
     city: str
@@ -126,11 +159,11 @@ def _get_fused_data(lat: float, lon: float, time_index: int):
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {"status": "ok"}
 
 
 @app.get("/api/geocode", response_model=GeocodeResponse)
-async def geocode(query: str = Query(..., description="Название города")):
+async def geocode(query: str = Query(..., min_length=1, max_length=100, description="Название города")):
     result = resolve_city(query)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Город '{query}' не найден")
@@ -140,10 +173,10 @@ async def geocode(query: str = Query(..., description="Название горо
 
 @app.get("/api/storm", response_model=StormReportResponse)
 async def get_storm_report(
-    lat: float = Query(..., description="Широта"),
-    lon: float = Query(..., description="Долгота"),
-    city: str = Query("Неизвестно", description="Название города"),
-    time_index: int = Query(0, description="Индекс времени (0=сейчас, 1=+3ч, 2=+6ч, 3=+12ч, 4=+24ч)")
+    lat: float = Query(..., ge=-90, le=90, description="Широта"),
+    lon: float = Query(..., ge=-180, le=180, description="Долгота"),
+    city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города"),
+    time_index: int = Query(0, ge=0, le=4, description="Индекс времени (0=сейчас, 1=+3ч, 2=+6ч, 3=+12ч, 4=+24ч)")
 ):
     try:
         current_data, pressure_data, source_label = _get_fused_data(lat, lon, time_index)
@@ -165,10 +198,10 @@ async def get_storm_report(
 
 @app.get("/api/chart/profile")
 async def get_profile_chart(
-    lat: float = Query(..., description="Широта"),
-    lon: float = Query(..., description="Долгота"),
-    city: str = Query("Неизвестно", description="Название города"),
-    time_index: int = Query(0, description="Индекс времени")
+    lat: float = Query(..., ge=-90, le=90, description="Широта"),
+    lon: float = Query(..., ge=-180, le=180, description="Долгота"),
+    city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города"),
+    time_index: int = Query(0, ge=0, le=4, description="Индекс времени")
 ):
     try:
         _, pressure_data, _ = _get_fused_data(lat, lon, time_index)
@@ -185,10 +218,10 @@ async def get_profile_chart(
 
 @app.get("/api/chart/skewt")
 async def get_skewt_chart(
-    lat: float = Query(..., description="Широта"),
-    lon: float = Query(..., description="Долгота"),
-    city: str = Query("Неизвестно", description="Название города"),
-    time_index: int = Query(0, description="Индекс времени")
+    lat: float = Query(..., ge=-90, le=90, description="Широта"),
+    lon: float = Query(..., ge=-180, le=180, description="Долгота"),
+    city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города"),
+    time_index: int = Query(0, ge=0, le=4, description="Индекс времени")
 ):
     try:
         current_data, pressure_data, _ = _get_fused_data(lat, lon, time_index)
@@ -209,9 +242,9 @@ async def get_skewt_chart(
 
 @app.get("/api/radar")
 async def get_radar(
-    lat: float = Query(..., description="Широта"),
-    lon: float = Query(..., description="Долгота"),
-    city: str = Query("Неизвестно", description="Название города")
+    lat: float = Query(..., ge=-90, le=90, description="Широта"),
+    lon: float = Query(..., ge=-180, le=180, description="Долгота"),
+    city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города")
 ):
     try:
         radar_path, timestamp_utc, is_cached = get_latest_radar_frame()
@@ -265,4 +298,4 @@ async def get_time_offsets():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=API_HOST, port=8000)
