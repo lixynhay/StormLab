@@ -111,6 +111,7 @@ GITHUB_TOKEN=токен_GitHub               # опционально (AI, пр�
 GEMINI_API_KEY=ключ_Google_AI           # опционально (AI, приоритет 3; модель — GEMINI_MODEL)
 OPENROUTER_API_KEY=ключ_OpenRouter      # опционально (AI, приоритет 4)
 OPENWEATHERMAP_API_KEY=ключ_OWM         # опционально (фьюжн приземных данных)
+API_ACCESS_KEY=длинный_случайный_ключ   # обязательно для REST API
 ADMIN_USER_IDS=123456,789012            # опционально (id админов, bypass лимитов запросов)
 ```
 В `.env.example` также присутствуют зарезервированные переменные AiTunnel (`AITUNNEL_API_KEY/BASE_URL/MODEL`) — в текущей версии `config.py` они не читаются.
@@ -126,6 +127,9 @@ python bot.py
 ```bash
 python api.py   # uvicorn, порт 8000
 ```
+
+К эндпоинтам `/api/*`, кроме `/api/health`, требуется заголовок `X-API-Key`.
+Если `API_ACCESS_KEY` не задан, эти эндпоинты закрыты с ответом `403`.
 
 ---
 
