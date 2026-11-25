@@ -3,6 +3,17 @@ from fastapi.testclient import TestClient
 import api
 
 
+def test_documentation_page_is_public():
+    with TestClient(api.app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Документация API" in response.text
+    assert "/api/health" in response.text
+    assert "X-API-Key" in response.text
+
+
 def test_health_is_public():
     api.API_ACCESS_KEY = "test-secret"
     api._rest_rate_limits.clear()
