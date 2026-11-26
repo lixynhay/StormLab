@@ -1,5 +1,7 @@
 import io
 import logging
+import threading
+from functools import wraps
 from typing import Optional, Dict, Any, List, Tuple
 
 import matplotlib
@@ -13,6 +15,15 @@ from metpy.units import units
 from storm_indices import SKEWT_LEVELS
 
 logger = logging.getLogger(__name__)
+_MATPLOTLIB_RENDER_LOCK = threading.Lock()
+
+
+def _serialized_matplotlib_render(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with _MATPLOTLIB_RENDER_LOCK:
+            return func(*args, **kwargs)
+    return wrapped
 
 FIG_BG = "#0B132B"
 AX_BG = "#101424"
@@ -68,7 +79,9 @@ def _extract_profile_data(hourly: Dict[str, Any]) -> Tuple[List[float], List[flo
     return temp_pressures, temps, dews, pressures, speeds, dirs
 
 
+@_serialized_matplotlib_render
 def build_profile_chart(pressure_data: dict, city: str, time_label: str) -> Optional[io.BytesIO]:
+    fig = None
     try:
         hourly = pressure_data.get("hourly", {})
         temp_pressures, temps, dews, pressures, speeds, dirs = _extract_profile_data(hourly)
@@ -131,10 +144,12 @@ def build_profile_chart(pressure_data: dict, city: str, time_label: str) -> Opti
         
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=200, facecolor=FIG_BG, bbox_inches='tight')
-        plt.close(fig)
         buf.seek(0)
         return buf
         
     except Exception as e:
         logger.error(f"Критическая ошибка построения графика профиля: {e}", exc_info=True)
         return None
+    finally:
+        if fig is not None:
+            plt.close(fig)

@@ -9,6 +9,7 @@ import metpy.calc as mpcalc
 from metpy.plots import SkewT
 from metpy.units import units
 from storm_indices import PRESSURE_LEVELS, build_wind_profile
+from chart_builder import _serialized_matplotlib_render
 
 logger = logging.getLogger(__name__)
 
@@ -75,14 +76,14 @@ def _draw_skewt(ax, current, hourly, city, time_label, indices_text=None):
     skew = SkewT(fig=ax.figure, rotation=45, subplot=ax)
     skew.ax.set_facecolor(PANEL_BG)
 
-    skew.plot(p, T, TEMP_COLOR, linewidth=3, label="🌡️ Температура")
-    skew.plot(p, Td, DEW_COLOR, linewidth=3, label="💧 Точка росы")
+    skew.plot(p, T, TEMP_COLOR, linewidth=3, label="T: Температура")
+    skew.plot(p, Td, DEW_COLOR, linewidth=3, label="Td: Точка росы")
 
     parcel_prof = None
     try:
         parcel_prof = mpcalc.parcel_profile(p, T[0], Td[0]).to("degC")
         skew.plot(p, parcel_prof, PARCEL_COLOR, linestyle="--", linewidth=2.2,
-                  label="📦 Парцель")
+                  label="Парцель")
         skew.shade_cape(p, T, parcel_prof, color=CAPE_COLOR)
         skew.shade_cin(p, T, parcel_prof, Td, color=CIN_COLOR)
     except Exception as e:
@@ -146,7 +147,7 @@ def _draw_skewt(ax, current, hourly, city, time_label, indices_text=None):
 
     skew.ax.legend(fontsize=8, loc="upper right", facecolor=PANEL_BG,
                    edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
-    skew.ax.set_title(f"⚡ {city} • {time_label}",
+    skew.ax.set_title(f"Штормовой профиль: {city} • {time_label}",
                       fontsize=13, color=TEXT_COLOR, pad=12, fontweight="bold")
     return skew, (pressures, speeds, dirs, p, u if len(pressures) >= 2 else None, v if len(pressures) >= 2 else None)
 
@@ -194,7 +195,7 @@ def _draw_hodograph(ax, pressures, speeds, dirs):
 
         ax.set_xlim(-50, 50)
         ax.set_ylim(-50, 50)
-        ax.set_title("🌪️ Годограф (u/v м/с)",
+        ax.set_title("Hodograph (u/v м/с)",
                      fontsize=10, color=TEXT_COLOR, pad=8, fontweight="bold")
     except Exception as e:
         logger.warning(f"Hodograph failed: {e}")
@@ -212,17 +213,17 @@ def _draw_indices_box(ax, current, hourly, indices_text=None):
 
     info_lines = []
     if surface_temp is not None:
-        info_lines.append(f"🌡️ T: {surface_temp:.1f}°C")
+        info_lines.append(f"T: {surface_temp:.1f}°C")
     if surface_td is not None:
-        info_lines.append(f"💧 Td: {surface_td:.1f}°C")
+        info_lines.append(f"Td: {surface_td:.1f}°C")
     if surface_p is not None:
-        info_lines.append(f"📊 P: {surface_p:.0f} гПа")
+        info_lines.append(f"P: {surface_p:.0f} гПа")
     if surface_temp is not None and surface_td is not None:
         spread = surface_temp - surface_td
-        info_lines.append(f"💦 Spread: {spread:.1f}°C")
+        info_lines.append(f"Spread: {spread:.1f}°C")
 
     y_pos = 0.92
-    ax.text(0.05, y_pos, "📈 УСЛОВИЯ У ПОВЕРХНОСТИ",
+    ax.text(0.05, y_pos, "УСЛОВИЯ У ПОВЕРХНОСТИ",
             transform=ax.transAxes, fontsize=10, color=ACCENT,
             fontweight="bold")
     y_pos -= 0.08
@@ -234,7 +235,7 @@ def _draw_indices_box(ax, current, hourly, indices_text=None):
 
     if indices_text:
         y_pos -= 0.03
-        ax.text(0.05, y_pos, "⚡ КЛЮЧЕВЫЕ ИНДЕКСЫ",
+        ax.text(0.05, y_pos, "КЛЮЧЕВЫЕ ИНДЕКСЫ",
                 transform=ax.transAxes, fontsize=10, color=ACCENT,
                 fontweight="bold")
         y_pos -= 0.08
@@ -298,7 +299,7 @@ def _draw_sounding_skewt(ax, df, run_time, station_name):
 
     skew.ax.set_ylim(1030, 200)
     skew.ax.set_xlim(-40, 45)
-    skew.ax.set_title(f"📡 {station_name} • Зонд\n{run_time:%d.%m %H:%MZ}",
+    skew.ax.set_title(f"Зонд: {station_name} • {run_time:%d.%m %H:%MZ}",
                       fontsize=12, color=TEXT_COLOR, pad=10, fontweight="bold")
 
     skew.plot_dry_adiabats(linewidth=0.6, alpha=0.35, color=GRID_COLOR)
@@ -312,9 +313,11 @@ def _draw_sounding_skewt(ax, df, run_time, station_name):
     skew.ax.set_ylabel("Давление (гПа)", fontsize=10, color=TEXT_COLOR)
     return skew
 
+@_serialized_matplotlib_render
 def build_skewt_chart(current, hourly, sounding_df=None, sounding_run_time=None,
                       city="Город", time_label="Сейчас", station_name="Зонд",
                       report=None):
+    fig = None
     try:
         has_sounding = sounding_df is not None and len(sounding_df) > 0
 
@@ -333,7 +336,6 @@ def build_skewt_chart(current, hourly, sounding_df=None, sounding_run_time=None,
             ax_model = fig.add_subplot(gs[0, 0])
             result = _draw_skewt(ax_model, current, hourly, city, time_label, indices_text)
             if result is None or result[0] is None:
-                plt.close(fig)
                 return None
 
             ax_sounding = fig.add_subplot(gs[0, 1])
@@ -348,7 +350,6 @@ def build_skewt_chart(current, hourly, sounding_df=None, sounding_run_time=None,
             ax_skewt = fig.add_subplot(gs[0, :])
             result = _draw_skewt(ax_skewt, current, hourly, city, time_label, indices_text)
             if result is None or result[0] is None:
-                plt.close(fig)
                 return None
 
             skew, wind_data = result
@@ -367,9 +368,11 @@ def build_skewt_chart(current, hourly, sounding_df=None, sounding_run_time=None,
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=180, bbox_inches="tight", facecolor=DARK_BG)
-        plt.close(fig)
         buf.seek(0)
         return buf
     except Exception as e:
         logger.error(f"Skew-T: {e}", exc_info=True)
         return None
+    finally:
+        if fig is not None:
+            plt.close(fig)

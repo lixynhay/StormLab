@@ -205,7 +205,7 @@ async def get_storm_report(
 
 
 @app.get("/api/chart/profile")
-async def get_profile_chart(
+def get_profile_chart(
     lat: float = Query(..., ge=-90, le=90, description="Широта"),
     lon: float = Query(..., ge=-180, le=180, description="Долгота"),
     city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города"),
@@ -225,7 +225,7 @@ async def get_profile_chart(
 
 
 @app.get("/api/chart/skewt")
-async def get_skewt_chart(
+def get_skewt_chart(
     lat: float = Query(..., ge=-90, le=90, description="Широта"),
     lon: float = Query(..., ge=-180, le=180, description="Долгота"),
     city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города"),
@@ -249,7 +249,7 @@ async def get_skewt_chart(
 
 
 @app.get("/api/radar")
-async def get_radar(
+def get_radar(
     lat: float = Query(..., ge=-90, le=90, description="Широта"),
     lon: float = Query(..., ge=-180, le=180, description="Долгота"),
     city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города")

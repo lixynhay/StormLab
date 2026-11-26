@@ -223,7 +223,7 @@ async def _send_storm_report(message_target, lat, lon, city, time_index, time_la
         "current": current_data["current"], "pressure": pressure_data["hourly"]
     }
     
-    chart = build_profile_chart(pressure_data, city, time_label)
+    chart = await asyncio.to_thread(build_profile_chart, pressure_data, city, time_label)
     if chart is not None:
         msg = await message_target.reply_photo(photo=chart)
         sent_messages.append(msg.message_id)
@@ -288,12 +288,18 @@ async def _send_radar(message_target, lat, lon, city, context):
             
         radar_image = await asyncio.to_thread(build_radar_image, lat, lon, radar_path)
         if radar_image is None:
-            await send_error_card(message_target, "Не удалось построить изображение радара.", action_callback="refresh")
+            await send_error_card(
+                message_target,
+                "RainViewer не вернул данные радара для этого района. Попробуй позже.",
+                action_callback="refresh",
+            )
             return
             
         time_str = timestamp_utc.strftime("%H:%M UTC")
         cache_note = " (кэш)" if is_cached else ""
         caption = f"📡 Радар осадков: *{city}*{cache_note}\n🕐 Данные: {time_str}\n📏 Масштаб: ~200x200 км"
+        if getattr(radar_image, "no_echo", False):
+            caption += "\nОсадков в зоне не обнаружено."
         await message_target.reply_photo(photo=radar_image, caption=caption, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Ошибка отправки радара: {e}", exc_info=True)
