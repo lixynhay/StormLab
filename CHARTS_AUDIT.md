@@ -33,7 +33,7 @@
 
 ### Радар
 
-- `radar_api.get_latest_radar_frame` берёт последний допустимый path из RainViewer; метаданные path/time кэшируются на 300 секунд (`radar_api.py:28-45,48-73`). Builder вычисляет tile/pixel координаты (`radar_builder.py:24-38`), запрашивает 3×3 последовательными sync HTTPX GET (`radar_builder.py:53-84`), размещает PNG на canvas, crop 600×600 и marker (`radar_builder.py:48-51,86-112`). На MOSCOWе zoom 6: tile `(42,18)`, local pixel `(170,170)`, marker в crop `(300,300)`.
+- `radar_api.get_latest_radar_frame` берёт последний допустимый path из RainViewer; метаданные path/time кэшируются на 300 секунд (`radar_api.py:28-45,48-73`). Builder вычисляет tile/pixel координаты (`radar_builder.py:24-38`), запрашивает 3×3 последовательными sync HTTPX GET (`radar_builder.py:53-84`), размещает PNG на canvas, crop 600×600 и marker (`radar_builder.py:48-51,86-112`). Точное историческое название города и его tile/pixel coordinates удалены; нейтральные тестовые точки заданы в `tests/cities.py`.
 - Код использует `httpx.Client(timeout=15.0)`, а не `requests` (`radar_builder.py:55`); один client переиспользуется, запросы последовательные. Telegram запускает builder в worker thread (`bot.py:289`), но async REST route вызывает его синхронно (`api.py:262`). Девять запросов могут суммарно ждать до ~135 секунд при timeout на каждом; это задержка, но зависание Windows отдельно не воспроизводилось.
 - Текущий URL в коде: `{base}{radar_path}/{zoom}/{x}/{y}.png` (`radar_builder.py:61`). На live path `/v2/radar/14b429d6636c`, zoom 6, tile `(42,18)` он ответил HTTP 200 изображением 256×256 с надписью “Zoom Level Not Supported”; production mosaic сохранена как `charts_audit_out/radar_mosaic.png`. Проверенный полный RainViewer URL содержит size/color/options: `/{path}/256/{z}/{x}/{y}/2/1_1.png`; все 9 таких текущих тайлов были прозрачными без radar echoes. Референс-мозаика сохранена отдельно.
 - `_is_stub_tile` распознаёт только строго одноцветное видимое grayscale изображение 256/512 (`radar_builder.py:13-22`). Реальная заглушка содержит **11 цветов**, поэтому проверка её пропустила. Текущие unit-тесты покрывают белый/серый, прозрачный, прозрачный multicolor и multicolor, но не реальный RainViewer stub (`tests/test_radar_builder.py:8-39`).
@@ -53,7 +53,7 @@
 
 ## Live renders
 
-Профиль Open-Meteo для геокодированных координат MOSCOWа: `55.7558, 37.6173`; получение current + pressure profile заняло 0.164 с. Файлы PNG были декодированы Pillow; unique colors рассчитаны по RGBA pixels.
+Live-профиль был получен из Open-Meteo; город и координаты исходного запроса удалены. Получение current + pressure profile заняло 0.164 с. Файлы PNG были декодированы Pillow; unique colors рассчитаны по RGBA pixels.
 
 | Renderer / артефакт | Результат | Время | Glyph stderr / статус |
 | --- | --- | ---: | --- |
@@ -66,10 +66,4 @@
 
 ## Артефакты
 
-- `charts_audit_out/profile_chart.png`
-- `charts_audit_out/skewt_hodograph.png`
-- `charts_audit_out/radar_mosaic.png` — stub от текущего production URL
-- `charts_audit_out/radar_mosaic_correct_url.png` — корректный URL, текущие no-echo tiles
-- `charts_audit_out/live-render-stderr.log`
-
-На старте аудита рабочее дерево уже содержало `M radar_builder.py` и `?? tests/test_radar_builder.py`; эти изменения не редактировались и не откатывались. После добавления отчёта и артефактов состояние включает их плюс `CHARTS_AUDIT.md` и `charts_audit_out/`.
+Исходная папка `charts_audit_out/` и все live-render PNG/log удалены из индекса и с диска при деперсонализации. Папка добавлена в `.gitignore`; исходные артефакты можно пересоздать на нейтральных точках из `tests/cities.py`.

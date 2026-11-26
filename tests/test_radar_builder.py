@@ -8,6 +8,7 @@ from PIL import Image
 
 import radar_builder
 from radar_builder import _is_stub_tile, build_radar_image
+from tests.cities import BERLIN, MOSCOW, OKC
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -50,7 +51,9 @@ def test_opaque_multicolor_tile_with_chromatic_dominant_is_not_stub():
     assert _is_stub_tile(tile) is False
 
 
-def test_full_tile_url_and_transparent_coverage(monkeypatch, caplog):
+@pytest.mark.parametrize("lat_lon", [MOSCOW, BERLIN, OKC])
+def test_full_tile_url_and_transparent_coverage(monkeypatch, caplog, lat_lon):
+    lat, lon = lat_lon
     fixture_bytes = (FIXTURE_DIR / "rainviewer_transparent.png").read_bytes()
     requested_urls = []
 
@@ -70,7 +73,7 @@ def test_full_tile_url_and_transparent_coverage(monkeypatch, caplog):
 
     monkeypatch.setattr(radar_builder.httpx, "Client", FakeClient)
     with caplog.at_level(logging.INFO, logger="radar_builder"):
-        image_buffer = build_radar_image(55.7558, 37.6173, "/v2/radar/test-frame")
+        image_buffer = build_radar_image(lat, lon, "/v2/radar/test-frame")
 
     assert image_buffer is not None
     assert image_buffer.no_echo is True
@@ -80,7 +83,9 @@ def test_full_tile_url_and_transparent_coverage(monkeypatch, caplog):
     assert "Loaded 9/9 valid radar tiles" in caplog.text
 
 
-def test_zero_valid_tile_coverage_returns_none(monkeypatch, caplog):
+@pytest.mark.parametrize("lat_lon", [MOSCOW, BERLIN, OKC])
+def test_zero_valid_tile_coverage_returns_none(monkeypatch, caplog, lat_lon):
+    lat, lon = lat_lon
     requested_urls = []
 
     class FakeClient:
@@ -99,14 +104,16 @@ def test_zero_valid_tile_coverage_returns_none(monkeypatch, caplog):
 
     monkeypatch.setattr(radar_builder.httpx, "Client", FakeClient)
     with caplog.at_level(logging.WARNING, logger="radar_builder"):
-        image_buffer = build_radar_image(55.7558, 37.6173, "/v2/radar/test-frame")
+        image_buffer = build_radar_image(lat, lon, "/v2/radar/test-frame")
 
     assert image_buffer is None
     assert len(requested_urls) == 9
     assert "No valid radar tile coverage" in caplog.text
 
 
-def test_all_stub_tiles_return_none(monkeypatch, caplog):
+@pytest.mark.parametrize("lat_lon", [MOSCOW, BERLIN, OKC])
+def test_all_stub_tiles_return_none(monkeypatch, caplog, lat_lon):
+    lat, lon = lat_lon
     fixture_bytes = (FIXTURE_DIR / "rainviewer_stub.png").read_bytes()
 
     class FakeClient:
@@ -124,7 +131,7 @@ def test_all_stub_tiles_return_none(monkeypatch, caplog):
 
     monkeypatch.setattr(radar_builder.httpx, "Client", FakeClient)
     with caplog.at_level(logging.WARNING, logger="radar_builder"):
-        image_buffer = build_radar_image(55.7558, 37.6173, "/v2/radar/test-frame", zoom=8)
+        image_buffer = build_radar_image(lat, lon, "/v2/radar/test-frame", zoom=8)
 
     assert image_buffer is None
     assert caplog.text.count("is a stub (Zoom Level Not Supported)") == 9

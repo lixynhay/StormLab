@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import pickle
 import sys
 import time
 from datetime import datetime, timezone
@@ -670,7 +671,19 @@ async def alerts_background_task(context: ContextTypes.DEFAULT_TYPE):
 
 def build_application() -> Application:
     os.makedirs("data", exist_ok=True)
-    persistence = PicklePersistence(filepath="data/persistence.pkl")
+    persistence_path = "data/persistence.pkl"
+    try:
+        with open(persistence_path, "xb") as persistence_file:
+            pickle.dump({
+                "user_data": {},
+                "chat_data": {},
+                "bot_data": {},
+                "callback_data": None,
+                "conversations": {},
+            }, persistence_file, protocol=pickle.HIGHEST_PROTOCOL)
+    except FileExistsError:
+        pass
+    persistence = PicklePersistence(filepath=persistence_path)
     request_config = HTTPXRequest(read_timeout=30, write_timeout=30, connect_timeout=15, pool_timeout=15)
     
     application = (

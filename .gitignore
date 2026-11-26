@@ -3,6 +3,8 @@ __pycache__/
 .env
 *.token
 data/*.db
+data/persistence.pkl
+charts_audit_out/
 venv/
 
 bot.log

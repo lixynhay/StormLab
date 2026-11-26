@@ -174,7 +174,7 @@ StormLab/
  ├── rate_limiter.py           # Кулдауны по командам (storm 30с, skewt/ai 60с, radar 300с; admin bypass)
  ├── geocoding.py              # Геокодер Open-Meteo с кэшем
  ├── requirements.txt          # Зависимости Python (включая fastapi/uvicorn и pytest)
- └── data/                     # SQLite БД, persistence.pkl и кэш (создаётся автоматически, не коммитится)
+ └── data/                     # SQLite БД, persistence.pkl и кэш; runtime-данные локальны и игнорируются Git
 ```
 
 ---
