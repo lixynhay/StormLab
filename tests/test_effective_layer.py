@@ -1,6 +1,6 @@
 import pytest
 
-from effective_layer import (
+from core.effective_layer import (
     EFFECTIVE_CONSTANTS,
     effective_srh,
     effective_bulk_shear,
@@ -9,7 +9,7 @@ from effective_layer import (
     stp_effective,
     scp_effective,
 )
-from storm_indices import (
+from core.storm_indices import (
     calculate_hodograph_shear_srh,
     calculate_stp,
     scp_fixed_local,

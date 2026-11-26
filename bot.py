@@ -16,18 +16,18 @@ from telegram.request import HTTPXRequest
 
 from config import RESTART_DELAY_SECONDS, BOT_TOKEN
 from logging_config import setup_logging
-from openmeteo_api import OpenMeteoAPI
-from openweathermap_api import OpenWeatherMapAPI
-from data_fusion import fuse_current_weather
-from storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
-from season_regime import get_regime, interpret
-from chart_builder import build_profile_chart
-from ai_analysis import generate_storm_analysis
-from skewt_builder import build_skewt_chart
-from sounding_api import get_sounding_by_wmo, probe_stations
-from geocoding import resolve_city
-from radar_api import get_latest_radar_frame
-from radar_builder import build_radar_image
+from clients.openmeteo_api import OpenMeteoAPI
+from clients.openweathermap_api import OpenWeatherMapAPI
+from clients.data_fusion import fuse_current_weather
+from core.storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
+from core.season_regime import get_regime, interpret
+from render.chart_builder import build_profile_chart
+from ai.ai_analysis import generate_storm_analysis
+from render.skewt_builder import build_skewt_chart
+from clients.sounding_api import get_sounding_by_wmo, probe_stations
+from clients.geocoding import resolve_city
+from clients.radar_api import get_latest_radar_frame
+from render.radar_builder import build_radar_image
 from rate_limiter import check_rate_limit
 from alert_manager import (
     add_alert, remove_alert, get_user_alerts, get_all_alerts,

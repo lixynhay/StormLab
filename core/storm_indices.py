@@ -3,7 +3,7 @@ import numpy as np
 import metpy.calc as mpcalc
 from metpy.units import units
 
-from effective_layer import (
+from core.effective_layer import (
     find_effective_layer,
     effective_srh,
     effective_bulk_shear,
@@ -616,7 +616,7 @@ def calculate_brn(cape, bulk_shear_06):
 def calculate_threat_level(
     k, tt, li, cape=0, cin=0, shear_06=0, ehi=0, regime="warm", thresholds=None
 ):
-    from season_regime import thresholds_for
+    from core.season_regime import thresholds_for
 
     thresholds = thresholds_for(regime) if thresholds is None else thresholds
     score = 0

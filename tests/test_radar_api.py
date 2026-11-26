@@ -1,6 +1,6 @@
 import pytest
 
-import radar_api
+from clients import radar_api
 
 VALID_PATH = "/v2/radar/237cea37e45b"
 VALID_HOST = "https://tilecache.rainviewer.com"

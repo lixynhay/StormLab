@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from metpy.plots import SkewT
 from metpy.units import units
 
-from skewt_builder import _draw_hodograph, _draw_skewt, _select_spaced_barbs
+from render.skewt_builder import _draw_hodograph, _draw_skewt, _select_spaced_barbs
 
 
 pytestmark = pytest.mark.filterwarnings(

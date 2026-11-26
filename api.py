@@ -13,16 +13,16 @@ from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
 from config import API_ACCESS_KEY, API_HOST, API_TIMEOUT
-from openmeteo_api import OpenMeteoAPI
-from openweathermap_api import OpenWeatherMapAPI
-from data_fusion import fuse_current_weather
-from storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
-from chart_builder import build_profile_chart
-from skewt_builder import build_skewt_chart
-from geocoding import resolve_city
-from radar_api import get_latest_radar_frame
-from radar_builder import build_radar_image
-from ai_analysis import generate_storm_analysis
+from clients.openmeteo_api import OpenMeteoAPI
+from clients.openweathermap_api import OpenWeatherMapAPI
+from clients.data_fusion import fuse_current_weather
+from core.storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
+from render.chart_builder import build_profile_chart
+from render.skewt_builder import build_skewt_chart
+from clients.geocoding import resolve_city
+from clients.radar_api import get_latest_radar_frame
+from render.radar_builder import build_radar_image
+from ai.ai_analysis import generate_storm_analysis
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ _rest_rate_limits = {}
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def documentation():
     """Serve the interactive API documentation; the page itself is public."""
-    docs_path = Path(__file__).with_name("api_docs.html")
+    docs_path = Path(__file__).parent / "docs" / "api_docs.html"
     return HTMLResponse(docs_path.read_text(encoding="utf-8"))
 
 

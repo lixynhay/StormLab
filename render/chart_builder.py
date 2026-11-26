@@ -12,7 +12,7 @@ import metpy.calc as mpcalc
 from metpy.plots import SkewT
 from metpy.units import units
 
-from storm_indices import SKEWT_LEVELS
+from core.storm_indices import SKEWT_LEVELS
 
 logger = logging.getLogger(__name__)
 _MATPLOTLIB_RENDER_LOCK = threading.Lock()

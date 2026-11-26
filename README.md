@@ -70,8 +70,8 @@ THRESHOLDS = {
 
 - **Язык**: Python 3 (async/sync-микс: хендлеры `async def`, HTTP-запросы синхронные через `requests`/`httpx`)
 - **Framework**: `python-telegram-bot` (v22+)
-- **Метеорология**: `MetPy`, `NumPy`, `SciPy`, `pandas`, `Siphon` (Wyoming Upper Air / IGRA2)
-- **Визуализация**: `Matplotlib`, `Cartopy`, `Pillow`
+- **Метеорология**: `MetPy`, `NumPy`; для sounding данных — `pandas`, `Siphon` (Wyoming Upper Air / IGRA2)
+- **Визуализация**: `Matplotlib`, `Pillow`
 - **Хранение**: `SQLite` (стандартная библиотека `sqlite3`)
 - **API**: Open-Meteo (основной источник), OpenWeatherMap (фьюжн приземных данных), RainViewer (радар)
 - **AI**: цепочка fallback Groq (llama-3.3-70b) → GitHub Models (gpt-4o-mini) → Gemini → OpenRouter → LocalProvider (rule-based анализ без внешних API)
@@ -130,7 +130,7 @@ python bot.py
 python api.py   # uvicorn, порт 8000, хост из переменной API_HOST (по умолчанию 127.0.0.1)
 ```
 
-- `GET /` — публичная интерактивная страница документации (`api_docs.html`); Swagger/ReDoc/OpenAPI отключены.
+- `GET /` — публичная интерактивная страница документации (`docs/api_docs.html`); Swagger/ReDoc/OpenAPI отключены.
 - К остальным эндпоинтам `/api/*`, кроме публичного `/api/health`, требуется заголовок `X-API-Key`. Если `API_ACCESS_KEY` не задан — ответ `401`.
 - Действует rate-limit `REST_RATE_LIMIT = 60` запросов в минуту на ключ (сверх лимита — `429`).
 
@@ -146,35 +146,50 @@ python -m pytest -q
 
 ## 📂 Структура проекта
 
-Проект имеет плоскую структуру — все модули лежат в корне репозитория:
+Точки входа и конфигурация остаются в корне; внутренние модули сгруппированы по назначению. Каталоги Python-модулей работают как namespace packages и не содержат `__init__.py`.
 
 ```text
 StormLab/
- ├── bot.py                    # Точка входа: хендлеры команд, inline-клавиатуры, JobQueue алертов, авто-рестарт
- ├── api.py                    # REST API на FastAPI (auth по X-API-Key, rate-limit)
- ├── api_docs.html             # Публичная HTML-страница документации к REST API (отдаётся на GET /)
- ├── test_api_auth.py          # pytest-тесты REST API (публичная документация, health, проверка ключа и лимитов)
- ├── tests/                    # unit-тесты effective-layer, radar, season regime и storm_indices
- │   └── fixtures/             # реальные RainViewer PNG fixtures: echo, transparent tile и stub
- ├── config.py                 # Централизованная конфигурация из .env
- ├── logging_config.py         # Логирование с ротацией (bot.log)
- ├── storm_indices.py          # Расчёт всех метеорологических индексов (SPC standards)
- ├── effective_layer.py        # SPC effective layer и дополнительные STP(eff)/SCP(eff)
- ├── openmeteo_api.py          # Open-Meteo: модельные профили (6 изобарических + 12 уровней), кэш, ретраи
- ├── openweathermap_api.py     # OpenWeatherMap: текущая погода
- ├── data_fusion.py            # Обратновзвешенное слияние (inverse-variance) двух источников
- ├── sounding_api.py           # Реальные зонды: IGRA2-каталог станций, поиск ближайших, Wyoming Upper Air
- ├── skewt_builder.py          # Skew-T Log-P диаграммы (тёмная тема, годограф, инфо-бокс, «модель vs зонд»)
- ├── chart_builder.py          # Вертикальный профиль с парцелем и затенением CAPE/CIN
- ├── radar_api.py              # RainViewer: выбор последнего валидного фрейма, кэш
- ├── radar_builder.py          # Склейка тайлов радара 3×3 и кроп вокруг города
- ├── ai_analysis.py            # Промпт и генерация AI-анализа
- ├── ai_providers.py           # Цепочка провайдеров: Groq/GitHub/Gemini/OpenRouter/Local
- ├── alert_manager.py          # Подписки на алерты (SQLite, thresholds, кулдаун 2 ч, prune истории)
- ├── rate_limiter.py           # Кулдауны по командам (storm 30с, skewt/ai 60с, radar 300с; admin bypass)
- ├── geocoding.py              # Геокодер Open-Meteo с кэшем
- ├── requirements.txt          # Зависимости Python (включая fastapi/uvicorn и pytest)
- └── data/                     # SQLite БД, persistence.pkl и кэш; runtime-данные локальны и игнорируются Git
+ ├── bot.py                    # Telegram entrypoint, команды, callbacks, JobQueue, авто-рестарт
+ ├── api.py                    # REST entrypoint: FastAPI auth/rate-limit и endpoints
+ ├── config.py                 # Конфигурация из .env
+ ├── logging_config.py         # Логирование с ротацией
+ ├── alert_manager.py          # Подписки и SQLite alert history
+ ├── rate_limiter.py           # Кулдауны команд
+ ├── core/
+ │   ├── storm_indices.py      # Метеорологические индексы и storm report
+ │   ├── effective_layer.py    # SPC effective layer, ESRH/EBWD, STP(eff)/SCP(eff)
+ │   └── season_regime.py      # Warm/cool thresholds и интерпретация
+ ├── clients/
+ │   ├── openmeteo_api.py      # Профили Open-Meteo, cache/retries/CircuitBreaker
+ │   ├── openweathermap_api.py # Опциональные приземные данные OWM
+ │   ├── data_fusion.py        # Слияние текущих погодных данных
+ │   ├── geocoding.py          # Геокодирование Open-Meteo
+ │   ├── sounding_api.py       # Поиск и загрузка Wyoming/IGRA2 soundings
+ │   └── radar_api.py          # RainViewer frame discovery/cache
+ ├── render/
+ │   ├── chart_builder.py      # Skew-T профиль с parcel/CAPE/CIN
+ │   ├── skewt_builder.py      # Skew-T, hodograph, sounding comparison
+ │   └── radar_builder.py      # RainViewer tile mosaic и marker
+ ├── ai/
+ │   ├── ai_analysis.py        # AI prompt и fallback orchestration
+ │   └── ai_providers.py       # Groq/GitHub/Gemini/OpenRouter/Local providers
+ ├── docs/
+ │   ├── api_docs.html         # Публичная страница GET /
+ │   ├── AUDIT.md              # Технический аудит
+ │   ├── CHARTS_AUDIT.md       # Аудит chart/render систем
+ │   ├── DEAD_CODE.md          # Импортёры и inventory модулей
+ │   └── VERIFICATION.md       # Результаты проверок
+ ├── tests/
+ │   ├── test_api_auth.py      # REST auth/docs/health/rate-limit
+ │   ├── test_effective_layer.py
+ │   ├── test_radar_api.py
+ │   ├── test_radar_builder.py # RainViewer fixtures: echo/transparent/stub
+ │   ├── test_season_regime.py
+ │   ├── test_skewt_builder.py
+ │   └── test_storm_indices_core.py
+ ├── requirements.txt
+ └── data/                     # Локальная SQLite и persistence; игнорируется Git
 ```
 
 ---

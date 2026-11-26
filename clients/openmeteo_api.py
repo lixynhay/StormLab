@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 import requests
 
 from config import API_RETRY_ATTEMPTS, API_RETRY_DELAY, API_TIMEOUT, DEFAULT_LAT, DEFAULT_LON
-from storm_indices import SKEWT_LEVELS
+from core.storm_indices import SKEWT_LEVELS
 
 logger = logging.getLogger(__name__)
 

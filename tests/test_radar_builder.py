@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-import radar_builder
-from radar_builder import _is_stub_tile, build_radar_image
+from render import radar_builder
+from render.radar_builder import _is_stub_tile, build_radar_image
 from tests.cities import BERLIN, MOSCOW, OKC
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
@@ -72,7 +72,7 @@ def test_full_tile_url_and_transparent_coverage(monkeypatch, caplog, lat_lon):
             return SimpleNamespace(status_code=200, content=fixture_bytes)
 
     monkeypatch.setattr(radar_builder.httpx, "Client", FakeClient)
-    with caplog.at_level(logging.INFO, logger="radar_builder"):
+    with caplog.at_level(logging.INFO, logger=radar_builder.__name__):
         image_buffer = build_radar_image(lat, lon, "/v2/radar/test-frame")
 
     assert image_buffer is not None

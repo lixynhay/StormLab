@@ -1,6 +1,6 @@
 # Аудит мёртвого кода
 
-Дата: 2026-11-26. Проверен 21 корневой `.py` файл. Graphify недоступен: `graphify affected "bot.py"` завершился `command not found`; `graphify-out/` отсутствует. Поэтому module relationships проверены поиском Python imports, вызовов и entrypoints; классификация ниже не основана на graph results.
+Дата: 2026-11-26. Ниже сохранён снимок аудита 21 корневого `.py` файла до package-layout refactor. С тех пор production-модули перемещены по пакетам, а `test_api_auth.py` перенесён в `tests/`. Graphify недоступен: `graphify affected "bot.py"` завершился `command not found`; `graphify-out/` отсутствует. Поэтому module relationships проверены поиском Python imports, вызовов и entrypoints; классификация ниже не основана на graph results.
 
 ## Root Python modules
 
@@ -9,7 +9,7 @@
 | `ai_analysis.py` | `bot.py:24`, `api.py:25` | USED | `generate_storm_analysis` вызывается ботом и REST API; цепочка providers создаётся при импорте (`ai_analysis.py:6`). |
 | `ai_providers.py` | `ai_analysis.py:2` | USED | `build_provider_chain()` вызывается `ai_analysis`; Local provider всегда добавляется, облачные providers добавляются по ключам (`ai_providers.py:227-271`). |
 | `alert_manager.py` | `bot.py:31` | USED | Подписки и проверки вызываются командами `/alert`, `/unalert`, `/alerts` и `alerts_background_task` (`bot.py:426-458,627-668`). |
-| `api.py` | `test_api_auth.py:3`; entrypoint `python api.py` (`api.py:307`) | USED | Создаёт FastAPI app, предоставляет REST endpoints и самостоятельный запуск Uvicorn. |
+| `api.py` | `tests/test_api_auth.py:3`; entrypoint `python api.py` (`api.py:307`) | USED | Создаёт FastAPI app, предоставляет REST endpoints и самостоятельный запуск Uvicorn. |
 | `bot.py` | entrypoint `python bot.py` (`bot.py:741`) | USED | Регистрирует команды и запускает Telegram application. |
 | `chart_builder.py` | `bot.py:23`, `api.py:20`, `skewt_builder.py:12` | USED | Профильный renderer используется ботом и REST; сериализованный render decorator также импортируется Skew-T builder. |
 | `config.py` | `bot.py:16`, `api.py:15`, `ai_providers.py:228`, `geocoding.py:3`, `logging_config.py:5`, `openmeteo_api.py:8`, `openweathermap_api.py:6`, `rate_limiter.py:3` | USED | Централизованные runtime-настройки, ключи и defaults импортируются этими модулями. |
@@ -26,9 +26,9 @@
 | `skewt_builder.py` | `bot.py:25`, `api.py:21`, `tests/test_skewt_builder.py:9` | USED | Skew-T/model+sounding renderer вызывается ботом и REST; projection, dewpoint, hodograph/barb tests используют helpers. |
 | `sounding_api.py` | `bot.py:26` | USED | `probe_stations` вызывается в Skew-T flow; `get_sounding_by_wmo` вызывается при выборе станции (`bot.py:258,568`). |
 | `storm_indices.py` | `bot.py:21`, `api.py:19`, `openmeteo_api.py:9`, `chart_builder.py:15`, `skewt_builder.py:11`, `tests/test_effective_layer.py:12`, `tests/test_season_regime.py:2`, `tests/test_storm_indices_core.py:6` | USED | Центральные расчёты индексов используются отчётами, профилями и chart code; формулы покрыты tests. |
-| `test_api_auth.py` | pytest root discovery; importer: — | MISPLACED | Живой pytest module с `test_` prefix, но расположен в корне, тогда как остальные pytest modules находятся в `tests/`. Целевой путь: `tests/test_api_auth.py`. |
+| `test_api_auth.py` (audit snapshot) | pytest discovery; importer: — | MISPLACED → FIXED | На момент снимка тест был в корне; теперь находится в `tests/test_api_auth.py` рядом с остальным suite. |
 
-**Итог:** среди root production modules DEAD не найдено. `api.py` и `bot.py` являются скриптовыми entrypoints; `test_api_auth.py` тоже исполняется pytest discovery, поэтому он живой, но расположен отдельно от тестового каталога.
+**Итог:** среди production modules DEAD не найдено. `api.py` и `bot.py` являются скриптовыми entrypoints; ранее misplaced `test_api_auth.py` теперь расположен в `tests/`.
 
 ## Артефакты и gitignore
 
@@ -46,4 +46,4 @@
 - Graphify: `graphify affected "bot.py"` — unavailable (`command not found`); graph directory absent.
 - Direct imports: поиск по всем Python files в корне и `tests/`; динамических загрузчиков (`importlib`, `__import__`, `runpy`, file loaders) не обнаружено.
 - Entry points: `bot.py:741`, `api.py:307`.
-- Код не изменён; для `test_api_auth.py` предложено перемещение в `tests/`, но перемещение не выполнялось.
+- `test_api_auth.py` перемещён в `tests/`; импорт `api` сохранён без изменений.
