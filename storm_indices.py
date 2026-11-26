@@ -387,7 +387,7 @@ def calculate_lifted_index_metpy(pressure_profile, temperature_profile, dewpoint
         idx_500 = int(np.argmin(np.abs(p.magnitude - 500)))
         parcel_prof = mpcalc.parcel_profile(p[:idx_500 + 1], T[0], Td[0])
         li = (T[idx_500] - parcel_prof[-1]).magnitude
-        return round(max(-15.0, min(20.0, float(li))), 1)
+        return round(float(li), 1)
     except Exception as e:
         logger.warning(f"Lifted Index (MetPy) failed: {e}")
         return None
@@ -541,22 +541,16 @@ def calculate_showalter_index(pressure_levels, temperatures, dewpoints):
         p = np.array(pressure_levels) * units.hPa
         T = np.array(temperatures) * units.degC
         Td = np.array(dewpoints) * units.degC
-        
+
+        idx_850 = int(np.argmin(np.abs(p.magnitude - 850)))
         idx_500 = int(np.argmin(np.abs(p.magnitude - 500)))
-        T500_actual = T[idx_500]
-        
-        try:
-            # Используем ML-парцель (смешанный слой 100 гПа) для большей репрезентативности
-            ml_T, ml_Td = mpcalc.mix(p[:5], T[:5], Td[:5], depth=100 * units.hPa)
-            lcl_p, lcl_t = mpcalc.lcl(p[0], ml_T, ml_Td)
-            parcel_temp_500 = mpcalc.moist_lapse(500 * units.hPa, lcl_t, reference_pressure=lcl_p)
-            return round((T500_actual - parcel_temp_500).magnitude, 1)
-        except Exception:
-            # Fallback на приземный парцель, если ML не удался
-            lcl_p, lcl_t = mpcalc.lcl(p[0], T[0], Td[0])
-            parcel_temp_500 = mpcalc.moist_lapse(500 * units.hPa, lcl_t, reference_pressure=lcl_p)
-            return round((T500_actual - parcel_temp_500).magnitude, 1)
-            
+
+        lcl_p, lcl_t = mpcalc.lcl(p[idx_850], T[idx_850], Td[idx_850])
+        parcel_temp_500 = mpcalc.moist_lapse(
+            500 * units.hPa, lcl_t, reference_pressure=lcl_p
+        )
+        return round((T[idx_500] - parcel_temp_500).magnitude, 1)
+
     except Exception as e:
         logger.error(f"Showalter Index error: {e}", exc_info=True)
         return None
