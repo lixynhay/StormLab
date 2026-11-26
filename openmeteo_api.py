@@ -52,6 +52,9 @@ class OpenMeteoAPI:
         self._breaker = CircuitBreaker(failure_threshold=3, reset_timeout=300)
         # Переиспользование TCP/TLS-соединений между запросами
         self._session = requests.Session()
+        self._session.headers.update({
+            "User-Agent": "StormLab-Weather-Bot/1.0 (+https://github.com/lixynhay/StormLab)"
+        })
 
         self._cache: Dict[str, Any] = {}
         self._cache_timestamps: Dict[str, datetime] = {}
