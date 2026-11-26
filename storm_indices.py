@@ -902,7 +902,7 @@ def format_storm_text(report: dict, city: str, timestamp_str: str) -> str:
         f"🎯 *Композитные (Шторм-чейзинг)*\n"
         f"• STP (торнадо): *{report.get('stp', 'н/д')}* — {report.get('stp_interpretation')}\n"
         f"• STP(eff): *{report.get('stp_eff', 'н/д')}*\n"
-        f"• SCP (суперячейки): *{report.get('scp', 'н/д')}* — {report.get('scp_interpretation')}\n"
+        f"• SCP (local, не SPC): *{report.get('scp', 'н/д')}* — {report.get('scp_interpretation')}\n"
         f"• SCP(eff): *{report.get('scp_eff', 'н/д')}*\n"
         f"• DCAPE (шквалы): *{report.get('dcape', 'н/д')}* Дж/кг — {report.get('dcape_interpretation')}\n"
         f"• MCS: {report.get('mcsm_interpretation')}\n\n"
