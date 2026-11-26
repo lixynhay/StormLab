@@ -29,16 +29,16 @@
 
 **Индексы устойчивости:**
 - K-Index, Total Totals, **Lifted Index** (точный расчёт через MetPy)
-- Showalter Index (ML-парцель), SWEAT Index, Mid-layer spread
+- Showalter Index (парсель, поднятый с уровня 850 гПа), SWEAT Index, Mid-layer spread
 
 **Динамика (важно для суперячеек):**
 - Bulk Wind Shear 0-6 км и 0-3 км
 - Storm Relative Helicity (SRH) с расчётом Bunkers Storm Motion
 
 **Композитные индексы (шторм-чейзинг):**
-- **STP** (Significant Tornado Parameter) — риск торнадо (использует MLCAPE)
-- **SCP** (Supercell Composite) — потенциал суперячеек (использует MUCAPE)
-- **STP(eff) / SCP(eff)** — дополнительные композиты по SPC effective layer; при отсутствии effective layer остаются `н/д`, а fixed-layer STP/SCP выводятся как ранее
+- **STP** (Significant Tornado Parameter) — fixed-layer SPC-формула на SB CAPE/LCL, SRH 0–1 км и bulk shear 0–6 км; CIN в формулу не входит
+- **SCP (local)** — локальная fixed-layer эвристика, не SPC SCP
+- **STP(eff) / SCP(eff)** — SPC effective-layer композиты: STP использует ML CAPE/LCL/CIN, SCP — MU CAPE/CIN; оба используют ESRH/EBWD. При отсутствии effective layer выводятся `н/д`, fixed-layer значения остаются доступны
 - **DCAPE** (Downdraft CAPE) — риск микропорывов/шквалов (metpy `downdraft_cape_cin` + ручной fallback с виртуальной температурой)
 - EHI (Energy-Helicity Index, CAPE 0-3 км), BRN (Bulk Richardson Number)
 - MCS Maintenance — устойчивость линий шквалов
@@ -62,7 +62,7 @@ THRESHOLDS = {
 
 Алерт формируется при совпадении ≥3 условий либо при сочетании CAPE ≥ 2000 Дж/кг + сдвиг ≥ 20 м/с (риск суперячеек).
 
-> ✅ **Статус:** рассылка полностью подключена — фоновая задача `alerts_background_task` запускается через `JobQueue.run_repeating` в `bot.py` каждые 30 минут (первый запуск через 60 с после старта). Для каждой подписки обновляются данные, считается отчёт, и при опасной обстановке пользователю приходит уведомление с кулдауном 2 часа; между подписками выдерживается пауза 2 с для защиты от rate-limit внешних API.
+> ✅ **Статус:** рассылка подключена — фоновая задача `alerts_background_task` запускается через `JobQueue.run_repeating` в `bot.py` каждые 30 минут (первый запуск через 60 с после старта). Для каждой подписки обновляются данные, считается отчёт, и при опасной обстановке пользователю приходит уведомление с кулдауном 2 часа; между подписками выдерживается пауза 2 с для защиты от rate-limit внешних API. В `alert_manager.py` есть `prune_history()`, но фоновая задача её не вызывает, поэтому автоматическая очистка истории сейчас не выполняется.
 
 ---
 
@@ -138,8 +138,9 @@ python api.py   # uvicorn, порт 8000, хост из переменной API
 
 ### 6. Тесты
 ```bash
-pytest test_api_auth.py -v
+python -m pytest -q
 ```
+Набор включает REST auth, сезонный режим, effective-layer, формулы `storm_indices` и RainViewer tile/stub обработку.
 
 ---
 
@@ -153,6 +154,8 @@ StormLab/
  ├── api.py                    # REST API на FastAPI (auth по X-API-Key, rate-limit)
  ├── api_docs.html             # Публичная HTML-страница документации к REST API (отдаётся на GET /)
  ├── test_api_auth.py          # pytest-тесты REST API (публичная документация, health, проверка ключа и лимитов)
+ ├── tests/                    # unit-тесты effective-layer, radar, season regime и storm_indices
+ │   └── fixtures/             # реальные RainViewer PNG fixtures: echo, transparent tile и stub
  ├── config.py                 # Централизованная конфигурация из .env
  ├── logging_config.py         # Логирование с ротацией (bot.log)
  ├── storm_indices.py          # Расчёт всех метеорологических индексов (SPC standards)
@@ -228,7 +231,7 @@ StormLab/
 - Высоты рассчитываются из стандартной атмосферы, а не из реальных данных (ограничение модельных API).
 - Радар RainViewer иногда недоступен во время глобальных обновлений их серверов.
 - AI-анализ зависит от доступности и квот внешних API (автоматически переключается на fallback-провайдеров вплоть до локального анализа).
-- Покрытое тестами только REST API (`test_api_auth.py`); расчёт индексов, визуализация и логика алертов полноценных unit-тестов не имеют (в `alert_manager.py` есть лишь встроенная самопроверка порогов `_self_check()`).
+- Автоматические тесты покрывают REST auth, season regime, effective-layer, основные формулы `storm_indices`, Radar API и tile/stub detection. Логика условий алертов и планировщик не имеют отдельных unit-тестов; `_self_check()` в `alert_manager.py` определён, но автоматически не запускается.
 - **Дисклеймер**: Расчёт по доступному модельному профилю. Не заменяет официальный прогноз метеослужб.
 
 ---
