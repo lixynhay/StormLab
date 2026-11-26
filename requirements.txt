@@ -1,4 +1,4 @@
-python-telegram-bot>=22.8
+python-telegram-bot[job-queue]>=22.8
 httpx[http2]>=0.28.1
 MetPy>=1.7.1
 numpy>=2.4.6
