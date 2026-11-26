@@ -208,6 +208,21 @@ StormLab/
 
 ---
 
+## 📝 История изменений (changelog)
+
+### 2026-11-26 — SPC formula corrections (read-only audit → applied)
+- **Fixed-layer STP (`calculate_stp`)**: приведен в точное соответствие SPC (Thompson et al., begin.html): используется sbCAPE, sbLCL, SRH 0–1 км, 6BWD; CIN-член удалён (SPC fixed-STP не содержит CIN); 6BWD < 12.5 м/с → 0, > 30 м/с → cap 1.5.
+- **Fixed-layer SCP**: переименована в `scp_fixed_local`, docstring: «не SPC» — первоисточник (help_scp.html, begin.html) определяет SCP только через effective-layer ингредиенты (muCAPE, ESRH, EBWD).
+- **Effective inflow layer (`find_effective_layer`)**: реализован по SPC (begin.html, help_esrh.html) — base = первый уровень с parcel CAPE ≥ 100 И CIN ≥ −250; top = первый уровень выше где CAPE < 100 ИЛИ CIN < −250; fallback = parcel EL.
+- **Effective SRH**: интегрируется от base до top effective inflow layer.
+- **EBWD (`effective_bulk_shear`)**: теперь |V(0.5 × EL) − V(base)|, а не |V(EL) − V(base)| — по определению SPC (begin.html).
+- **Effective STP (`stp_effective`)**: использует mlCAPE, mlLCL, mlCIN (SPC effective-STP); обнуляется, когда effective inflow base выше поверхности («the entire index is set to 0.0 when the effective inflow base is above the ground»).
+- **Effective SCP (`scp_effective`)**: приведена к текущей help-странице SCP (help_scp.html) — EBWD lower bound 10 м/с (было 12.5), cap 1.0 при > 20 м/с (было 1.5 при 30); CIN-член `(-40/muCIN)` с cap 1.0 при muCIN ≥ −40.
+- **Unity pins сохранены**: ESRH=100, EBWD=10 (EL=6000→0.5EL=3000), STP_eff=1.0 (ml-входы, base у земли), SCP_eff=4.5 (muCIN=−40).
+- **Discriminating pins добавлены**: CIN=−300 внизу → effective layer None; EL=8000 → EBWD измеряется на 4000 м; muCIN=−80 → SCP_eff вдвое меньше; sbCIN не влияет на fixed STP; профиль с SRH 0–1 ≠ SRH 0–3 → fixed STP использует 0–1; 6BWD=10 → fixed STP=0.
+
+---
+
 ## 🐛 Известные ограничения
 
 - Высоты рассчитываются из стандартной атмосферы, а не из реальных данных (ограничение модельных API).

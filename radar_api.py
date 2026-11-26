@@ -1,12 +1,29 @@
 import logging
+import re
 import httpx
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
 RAVIEWER_API_URL = "https://api.rainviewer.com/public/weather-maps.json"
 TILE_BASE_URL = "https://tilecache.rainviewer.com"
+RAINVIEWER_ALLOWED_HOSTS = {"tilecache.rainviewer.com", "api.rainviewer.com"}
+_RADAR_PATH_RE = re.compile(r"^/v2/radar/[A-Za-z0-9_-]{1,64}$")
+
+
+def _is_valid_radar_path(path, host=None):
+    """Allow only RainViewer tile paths: /v2/radar/<hash>, exactly one segment."""
+    if not isinstance(path, str) or not _RADAR_PATH_RE.fullmatch(path):
+        return False
+    if host is not None:
+        parsed = urlsplit(host)
+        if parsed.scheme != "https" or parsed.hostname not in RAINVIEWER_ALLOWED_HOSTS:
+            return False
+        if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+            return False
+    return True
 
 _cache = {
     "last_check": 0,
@@ -40,9 +57,10 @@ def get_latest_radar_frame(force_check=False):
             _cache["last_check"] = now
             return None, None, False
 
+        host = data.get("host") or TILE_BASE_URL
         for frame in reversed(past_frames):
             path = frame.get("path", "")
-            if path.count('/') >= 4:
+            if _is_valid_radar_path(path, host):
                 timestamp_unix = frame["time"]
                 dt_utc = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc)
                 
@@ -54,7 +72,7 @@ def get_latest_radar_frame(force_check=False):
                 logger.info(f"RainViewer: найден валидный фрейм {path}")
                 return path, dt_utc, False
         
-        logger.warning("RainViewer: API временно отдает только заглушки")
+        logger.warning("RainViewer: нет валидных фреймов (host/path не прошли allowlist)")
         _cache["is_valid"] = False
         _cache["last_check"] = now
         return None, None, False

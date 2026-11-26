@@ -4,3 +4,7 @@ __pycache__/
 *.token
 data/*.db
 venv/
+
+bot.log
+graphify-out/
+venv/

@@ -7,6 +7,7 @@ from effective_layer import (
     find_effective_layer,
     effective_srh,
     effective_bulk_shear,
+    most_unstable_el_height,
     stp_effective,
     scp_effective,
 )
@@ -172,31 +173,51 @@ def interpret_brn(brn):
     else:
         return "🟡 Слабый сдвиг относительно CAPE (мультиячейковые грозы)"
 
-def calculate_stp(cape, srh, lcl_height_m, cin, shear_06):
+def calculate_stp(cape, srh, lcl_height_m, shear_06, cin=None):
+    """Fixed-layer STP per SPC (no CIN term).
+
+    SPC: "STP = (sbCAPE / 1500 J kg-1) * ((2000 - sbLCL) / 1000 m) *
+    (0-1 km SRH / 150 m2 s-2) * (6BWD / 20 m s-1) where the sbLCL term is set
+    to 1.0 for sbLCL heights < 1000 m AGL; the 6BWD term is capped at 1.5 for
+    6BWD > 30 m s-1, and set to 0.0 for 6BWD < 12.5 m s-1."
+    https://www.spc.noaa.gov/exper/mesoanalysis/help/begin.html
+
+    ``cin`` is accepted for backwards compatibility only and is deliberately
+    ignored: the SPC fixed-layer formula has no CIN term.
+    """
     try:
         if cape is None or srh is None or shear_06 is None:
             return None
         if cape <= 0 or shear_06 <= 0:
             return 0.0
-        
-        cape_term = max(0.0, min(1.0, cape / 1500.0))
-        
+        # SPC: "the 6BWD term ... set to 0.0 for 6BWD < 12.5 m s-1"
+        if shear_06 < 12.5:
+            return 0.0
+
+        cape_term = max(0.0, cape / 1500.0)
+
         if lcl_height_m is None:
             lcl_term = 1.0
         else:
             lcl_term = max(0.0, min(1.0, (2000.0 - lcl_height_m) / 1000.0))
-        
-        srh_term = max(0.0, min(1.0, srh / 150.0))
-        shear_term = max(0.0, min(1.5, shear_06 / 20.0))
-        
-        cin_abs = abs(cin) if cin is not None else 0.0
-        cin_term = max(0.0, min(1.0, (200.0 - cin_abs) / 150.0))
-        
-        return round(cape_term * lcl_term * srh_term * shear_term * cin_term, 2)
+
+        srh_term = max(0.0, srh / 150.0)
+        # SPC: "the 6BWD term is capped at 1.5 for 6BWD > 30 m s-1"
+        shear_term = min(shear_06, 30.0) / 20.0
+
+        return round(cape_term * lcl_term * srh_term * shear_term, 2)
     except Exception:
         return None
 
-def calculate_scp(cape, srh, shear_06, cin):
+def scp_fixed_local(cape, srh, shear_06, cin):
+    """Local fixed-layer heuristic. NOT the SPC SCP.
+
+    SPC defines SCP only with effective-layer ingredients (muCAPE, ESRH, EBWD);
+    there is no fixed-layer SCP in
+    https://www.spc.noaa.gov/exper/mesoanalysis/help/help_scp.html or
+    https://www.spc.noaa.gov/exper/mesoanalysis/help/begin.html
+    Formula kept unchanged as a local screening heuristic.
+    """
     try:
         if cape is None or srh is None or shear_06 is None:
             return None
@@ -457,7 +478,7 @@ def build_wind_profile(current, hourly, pressure_levels):
 
 def calculate_hodograph_shear_srh(current, hourly, pressure_levels):
     result = {
-        "bulk_shear_06": 0, "bulk_shear_03": 0, "srh": 0,
+        "bulk_shear_06": 0, "bulk_shear_03": 0, "srh": 0, "srh_0_1": 0,
         "shear_interpretation": "Нет данных", "srh_method": "н/д",
     }
     try:
@@ -477,6 +498,7 @@ def calculate_hodograph_shear_srh(current, hourly, pressure_levels):
         max_depth_available = (heights[-1] - heights[0]).to("m").magnitude
         depth_06 = min(6000, max_depth_available) * units.m
         depth_03 = min(3000, max_depth_available) * units.m
+        depth_01 = min(1000, max_depth_available) * units.m
 
         shear06_u, shear06_v = mpcalc.bulk_shear(p, u, v, height=heights, depth=depth_06)
         shear03_u, shear03_v = mpcalc.bulk_shear(p, u, v, height=heights, depth=depth_03)
@@ -502,6 +524,12 @@ def calculate_hodograph_shear_srh(current, hourly, pressure_levels):
 
         _, _, srh_total = mpcalc.storm_relative_helicity(heights, u, v, depth=depth_03, storm_u=storm_u, storm_v=storm_v)
         result["srh"] = round(float(srh_total.to("m^2/s^2").magnitude), 1)
+
+        # SPC fixed-layer STP uses 0-1 km SRH, not 0-3 km:
+        # "STP = ... * (0-1 km SRH / 150 m2 s-2) * ..."
+        # https://www.spc.noaa.gov/exper/mesoanalysis/help/begin.html
+        _, _, srh_01 = mpcalc.storm_relative_helicity(heights, u, v, depth=depth_01, storm_u=storm_u, storm_v=storm_v)
+        result["srh_0_1"] = round(float(srh_01.to("m^2/s^2").magnitude), 1)
 
     except Exception as e:
         logger.error(f"Hodograph shear/SRH calculation error: {e}", exc_info=True)
@@ -669,6 +697,16 @@ def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", t
         report["cape"], report["cin"], report["lcl"], report["cape_type"] = 0, 0, 0, "SB"
         report["cin_interpretation"] = interpret_cin(0)
 
+    # SPC fixed-layer STP is surface-based: "(sbCAPE / 1500 J kg-1) *
+    # ((2000 - sbLCL) / 1000 m) * (0-1 km SRH / 150 m2 s-2) * (6BWD / 20 m s-1)"
+    # https://www.spc.noaa.gov/exper/mesoanalysis/help/begin.html
+    sb_cape = sb_cin = sb_lcl_height_m = None
+    if len(profile_pressure) >= 2:
+        sb_cape, sb_cin, sb_lcl_p, _ = calculate_cape_real(
+            profile_pressure, profile_temp, profile_dewpoint
+        )
+        sb_lcl_height_m = lcl_pressure_to_height(sb_lcl_p)
+
     valid_levels, temperatures, dewpoints = [], [], []
     for lvl in PRESSURE_LEVELS:
         t = hourly.get(f"temperature_{lvl}hPa", [None])[0]
@@ -716,12 +754,12 @@ def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", t
     report["lcl_height_m"] = lcl_height_m
     
     report["stp"] = calculate_stp(
-        report.get("cape"), report.get("srh"),
-        lcl_height_m, report.get("cin"), report.get("bulk_shear_06")
+        sb_cape, report.get("srh_0_1"),
+        sb_lcl_height_m, report.get("bulk_shear_06"), sb_cin
     )
     report["stp_interpretation"] = interpret_stp(report["stp"])
     
-    report["scp"] = calculate_scp(
+    report["scp"] = scp_fixed_local(
         report.get("cape"), report.get("srh"),
         report.get("bulk_shear_06"), report.get("cin")
     )
@@ -752,23 +790,29 @@ def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", t
                 "Td": dewpoints.to("degC").magnitude,
             }
 
-        mucape = mllcl = mlcin = None
+        mucape = mucin = mllcl = mlcape = mlcin = None
         try:
             mucape_qty, mucin_qty = mpcalc.most_unstable_cape_cin(
                 pressures, temperatures, dewpoints, depth=300 * units.hPa
             )
             mucape = float(mucape_qty.magnitude) if mucape_qty is not None else 0.0
+            mucin = float(mucin_qty.magnitude) if mucin_qty is not None else 0.0
         except Exception:
             pass
         try:
-            ml_t, ml_td = mpcalc.mix(
-                pressures[:5], temperatures[:5], dewpoints[:5], depth=100 * units.hPa
+            # MetPy has no mpcalc.mix(); mixed_parcel() is the 100-hPa mean parcel.
+            ml_p, ml_t, ml_td = mpcalc.mixed_parcel(
+                pressures, temperatures, dewpoints, depth=100 * units.hPa
             )
-            ml_lcl_p, _ = mpcalc.lcl(pressures[0], ml_t, ml_td)
+            ml_lcl_p, _ = mpcalc.lcl(ml_p, ml_t, ml_td)
             mllcl = float(lcl_pressure_to_height(ml_lcl_p.magnitude) or 0)
             mlcape_qty, mlcin_qty = mpcalc.mixed_layer_cape_cin(
                 pressures, temperatures, dewpoints, depth=100 * units.hPa
             )
+            # SPC effective STP uses mlCAPE / mlLCL / mlCIN:
+            # "STP = (mlCAPE / 1500 J kg-1) * ((2000 - mlLCL) / 1000 m) * ..."
+            # https://www.spc.noaa.gov/exper/mesoanalysis/help/begin.html
+            mlcape = float(mlcape_qty.magnitude) if mlcape_qty is not None else 0.0
             mlcin = float(mlcin_qty.magnitude) if mlcin_qty is not None else 0.0
         except Exception:
             pass
@@ -781,10 +825,20 @@ def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", t
                 report.get("storm_motion_v", 0),
             )
             esrh = effective_srh(effective_profile, z_bot, z_top, storm_motion)
-            ebwd = effective_bulk_shear(effective_profile, z_bot, z_top)
-            report["stp_eff"] = stp_effective(mucape, mllcl, esrh, ebwd, mlcin)
-            report["scp_eff"] = scp_effective(mucape, esrh, ebwd)
+            # SPC: EBWD goes "upward to 50% of the equilibrium level height with
+            # the most unstable parcel in the lowest 300 mb."
+            # https://www.spc.noaa.gov/exper/mesoanalysis/help/begin.html
+            mu_el = most_unstable_el_height(effective_profile)
+            ebwd = effective_bulk_shear(effective_profile, z_bot, mu_el)
+            report["stp_eff"] = stp_effective(
+                mlcape, mllcl, esrh, ebwd, mlcin,
+                base_height_m=z_bot,
+                surface_height_m=float(effective_profile["z"][0]),
+            )
+            report["scp_eff"] = scp_effective(mucape, esrh, ebwd, mucin)
             report["effective_layer"] = (z_bot, z_top)
+            report["ebwd"] = round(float(ebwd), 1)
+            report["esrh"] = round(float(esrh), 1)
         else:
             report["stp_eff"] = None
             report["scp_eff"] = None
