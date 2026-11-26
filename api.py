@@ -3,6 +3,8 @@ import logging
 import hmac
 import hashlib
 import time
+import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -30,6 +32,28 @@ logger = logging.getLogger(__name__)
 weather_api = OpenMeteoAPI()
 owm_api = OpenWeatherMapAPI()
 
+MIN_API_KEY_LENGTH = 16
+
+
+def _require_strong_api_key():
+    if API_ACCESS_KEY and len(API_ACCESS_KEY) < MIN_API_KEY_LENGTH:
+        message = f"API_ACCESS_KEY слишком короткий: нужно минимум {MIN_API_KEY_LENGTH} символов"
+        logger.critical(message)
+        raise SystemExit(message)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    _require_strong_api_key()
+    yield
+
+
+def _internal_error(context: str, exc: Exception) -> HTTPException:
+    request_id = uuid.uuid4().hex
+    logger.error(f"{context} [request_id={request_id}]: {exc}", exc_info=True)
+    return HTTPException(status_code=500, detail=f"Internal error (request_id={request_id})")
+
+
 app = FastAPI(
     title="StormLab API",
     description="API для метеорологического приложения с расчётом грозовых индексов",
@@ -37,6 +61,7 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -199,9 +224,10 @@ async def get_storm_report(
             report=report,
             formatted_text=formatted_text
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Ошибка расчёта индексов: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ошибка расчёта: {str(e)}")
+        raise _internal_error("Ошибка расчёта индексов", e)
 
 
 @app.get("/api/chart/profile")
@@ -219,9 +245,10 @@ def get_profile_chart(
             raise HTTPException(status_code=500, detail="Не удалось построить график")
 
         return StreamingResponse(chart, media_type="image/png")
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Ошибка построения графика: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error("Ошибка построения графика", e)
 
 
 @app.get("/api/chart/skewt")
@@ -243,9 +270,10 @@ def get_skewt_chart(
             raise HTTPException(status_code=500, detail="Не удалось построить Skew-T")
 
         return StreamingResponse(chart, media_type="image/png")
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Ошибка построения Skew-T: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error("Ошибка построения Skew-T", e)
 
 
 @app.get("/api/radar")
@@ -267,9 +295,10 @@ def get_radar(
             "X-Radar-Timestamp": timestamp_utc.isoformat(),
             "X-Radar-Cached": str(is_cached).lower()
         })
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Ошибка получения радара: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error("Ошибка получения радара", e)
 
 
 @app.post("/api/ai-analysis", response_model=AIAnalysisResponse)
@@ -286,9 +315,10 @@ async def get_ai_analysis(request: AIAnalysisRequest):
             analysis=analysis,
             timestamp=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Ошибка AI-анализа: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error("Ошибка AI-анализа", e)
 
 
 @app.get("/api/time-offsets")

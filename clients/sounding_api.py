@@ -117,9 +117,9 @@ def _probe_one(row):
     for t in _candidate_times():
         df = _fetch_sounding(wmo, t)
         if df is not None:
-            return {"wmo": wmo, "name": str(row.name), "dist_km": round(float(row.dist)),
+            return {"wmo": wmo, "name": str(row["name"]), "dist_km": round(float(row.dist)),
                     "has_data": True, "run_time": t}
-    return {"wmo": wmo, "name": str(row.name), "dist_km": round(float(row.dist)),
+    return {"wmo": wmo, "name": str(row["name"]), "dist_km": round(float(row.dist)),
             "has_data": False, "run_time": None}
 
 

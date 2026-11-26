@@ -1,6 +1,5 @@
 import sqlite3
 import logging
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -16,6 +15,7 @@ THRESHOLDS = {
 }
 
 ALERT_COOLDOWN_HOURS = 2
+CAPE_GATE = 250
 
 
 def init_db():
@@ -157,12 +157,10 @@ def can_send_alert(user_id: int, city: str) -> bool:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        cutoff = datetime.now() - timedelta(hours=ALERT_COOLDOWN_HOURS)
-        
         cursor.execute("""
             SELECT COUNT(*) FROM alert_history
-            WHERE user_id = ? AND city = ? AND sent_at > ?
-        """, (user_id, city, cutoff))
+            WHERE user_id = ? AND city = ? AND sent_at > datetime('now', ?)
+        """, (user_id, city, f"-{ALERT_COOLDOWN_HOURS} hours"))
         
         count = cursor.fetchone()[0]
         conn.close()
@@ -192,6 +190,8 @@ def record_alert_sent(user_id: int, city: str):
 def check_dangerous_conditions(report: Dict) -> Optional[str]:
     try:
         cape = report.get("cape") or 0
+        if cape < CAPE_GATE:
+            return None
         shear_06 = report.get("bulk_shear_06") or 0
         cin = abs(report.get("cin") or 0)
 

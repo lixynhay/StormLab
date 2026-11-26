@@ -186,6 +186,7 @@ class OpenMeteoAPI:
             "latitude": lat,
             "longitude": lon,
             "current": "temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m",
+            "wind_speed_unit": "ms",
             "timezone": "UTC"
         }
         return self._make_request(params, cache_key="current", lat=lat, lon=lon)

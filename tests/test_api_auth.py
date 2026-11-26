@@ -15,7 +15,7 @@ def test_documentation_page_is_public():
 
 
 def test_health_is_public():
-    api.API_ACCESS_KEY = "test-secret"
+    api.API_ACCESS_KEY = "test-secret-0123456789"
     api._rest_rate_limits.clear()
 
     with TestClient(api.app) as client:
@@ -26,18 +26,18 @@ def test_health_is_public():
 
 
 def test_api_rejects_missing_key():
-    api.API_ACCESS_KEY = "test-secret"
+    api.API_ACCESS_KEY = "test-secret-0123456789"
     api._rest_rate_limits.clear()
 
     with TestClient(api.app) as client:
         response = client.get("/api/time-offsets")
 
     assert response.status_code == 401
-    assert "test-secret" not in response.text
+    assert "test-secret-0123456789" not in response.text
 
 
 def test_api_rejects_invalid_key():
-    api.API_ACCESS_KEY = "test-secret"
+    api.API_ACCESS_KEY = "test-secret-0123456789"
     api._rest_rate_limits.clear()
 
     with TestClient(api.app) as client:
@@ -51,13 +51,13 @@ def test_api_rejects_invalid_key():
 
 
 def test_api_accepts_valid_key():
-    api.API_ACCESS_KEY = "test-secret"
+    api.API_ACCESS_KEY = "test-secret-0123456789"
     api._rest_rate_limits.clear()
 
     with TestClient(api.app) as client:
         response = client.get(
             "/api/time-offsets",
-            headers={"X-API-Key": "test-secret"},
+            headers={"X-API-Key": "test-secret-0123456789"},
         )
 
     assert response.status_code == 200
@@ -74,20 +74,20 @@ def test_api_fails_closed_without_key():
 
 
 def test_api_rate_limit():
-    api.API_ACCESS_KEY = "test-secret"
+    api.API_ACCESS_KEY = "test-secret-0123456789"
     api._rest_rate_limits.clear()
 
     with TestClient(api.app) as client:
         for _ in range(api.REST_RATE_LIMIT):
             response = client.get(
                 "/api/time-offsets",
-                headers={"X-API-Key": "test-secret"},
+                headers={"X-API-Key": "test-secret-0123456789"},
             )
             assert response.status_code == 200
 
         response = client.get(
             "/api/time-offsets",
-            headers={"X-API-Key": "test-secret"},
+            headers={"X-API-Key": "test-secret-0123456789"},
         )
 
     assert response.status_code == 429
