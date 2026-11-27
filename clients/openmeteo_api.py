@@ -1,6 +1,7 @@
+import bisect
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 import requests
@@ -9,6 +10,44 @@ from config import API_RETRY_ATTEMPTS, API_RETRY_DELAY, API_TIMEOUT, DEFAULT_LAT
 from core.storm_indices import SKEWT_LEVELS
 
 logger = logging.getLogger(__name__)
+
+
+def _as_utc(value) -> Optional[datetime]:
+    """Parse an Open-Meteo hourly timestamp (naive ISO = UTC) into an aware datetime."""
+    try:
+        dt = value if isinstance(value, datetime) else datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        return None
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
+def current_hour_index(times, now: Optional[datetime] = None) -> int:
+    """Index of the hourly slot covering ``now`` (UTC), not the midnight slot.
+
+    Open-Meteo returns hourly arrays starting at 00:00 UTC, so index 0 is midnight;
+    using it as "now" shifts every forecast button by the current hour of day.
+    """
+    if not times:
+        return 0
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    parsed = [dt for dt in (_as_utc(t) for t in times) if dt is not None]
+    if not parsed:
+        return 0
+    index = bisect.bisect_right(parsed, now) - 1
+    return max(0, min(index, len(times) - 1))
+
+
+def resolve_hour_index(times, offset_hours: int = 0, now: Optional[datetime] = None) -> int:
+    """Base index for the current UTC hour plus a button offset (+3/+6/+12/+24)."""
+    if not times:
+        return 0
+    base = current_hour_index(times, now)
+    return max(0, min(base + max(0, int(offset_hours)), len(times) - 1))
+
 
 
 class CircuitBreaker:
@@ -81,17 +120,19 @@ class OpenMeteoAPI:
         ]
 
         for key in expired_keys:
-            del self._cache[key]
-            del self._cache_timestamps[key]
+            # pop(..., None) is safe if a concurrent to_thread call already
+            # evicted the key: a KeyError here used to bubble out of
+            # _make_request and look like a spurious CircuitBreaker/API failure.
+            self._cache.pop(key, None)
+            self._cache_timestamps.pop(key, None)
             logger.debug(f"Cache expired: {key}")
 
         if len(self._cache) > self._max_cache_size:
             excess = len(self._cache) - self._max_cache_size
             sorted_keys = sorted(self._cache_timestamps.keys(), key=lambda k: self._cache_timestamps[k])
             for key in sorted_keys[:excess + 5]:
-                if key in self._cache:
-                    del self._cache[key]
-                    del self._cache_timestamps[key]
+                self._cache.pop(key, None)
+                self._cache_timestamps.pop(key, None)
             logger.info(f"Cache pruned: удалено {excess + 5} старых записей, текущий размер: {len(self._cache)}")
 
     def _make_request(self, params: Dict[str, Any], cache_key: Optional[str] = None, lat: Optional[float] = None, lon: Optional[float] = None) -> Dict[str, Any]:
@@ -177,7 +218,7 @@ class OpenMeteoAPI:
             "wind_speed_unit": "ms",
             "pressure_unit": "hPa",
             "timezone": "UTC",
-            "forecast_days": days,
+            "forecast_days": max(int(days), 2),
         }
         return self._make_request(params, cache_key=f"forecast_{days}", lat=lat, lon=lon)
 
@@ -192,7 +233,16 @@ class OpenMeteoAPI:
         return self._make_request(params, cache_key="current", lat=lat, lon=lon)
 
     def get_pressure_levels(self, lat: Optional[float] = None, lon: Optional[float] = None) -> Dict[str, Any]:
-        hourly_vars = ["surface_pressure"]
+        # Surface variables are part of the hourly payload so forecast buttons
+        # (time_index > 0) still have a valid surface parcel; otherwise the
+        # surface point disappears and 1000 hPa leaks below ground.
+        hourly_vars = [
+            "surface_pressure",
+            "temperature_2m",
+            "dew_point_2m",
+            "wind_speed_10m",
+            "wind_direction_10m",
+        ]
         for lvl in SKEWT_LEVELS:
             hourly_vars.extend([
                 f"temperature_{lvl}hPa",
@@ -206,7 +256,9 @@ class OpenMeteoAPI:
             "temperature_unit": "celsius",
             "wind_speed_unit": "ms",
             "timezone": "UTC",
-            "forecast_days": 1,
+            # 2 days are required: "now" may be 23 UTC, and +24h then lands on
+            # tomorrow's last hourly slot.
+            "forecast_days": 2,
         }
         return self._make_request(params, cache_key="pressure_levels", lat=lat, lon=lon)
 

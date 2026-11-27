@@ -9,7 +9,27 @@ import pandas as pd
 import requests
 from siphon.simplewebservice.wyoming import WyomingUpperAir
 
+from config import WYOMING_TIMEOUT
+
 logger = logging.getLogger(__name__)
+
+
+class _TimeoutWyomingUpperAir(WyomingUpperAir):
+    """Wyoming endpoint with an explicit timeout (siphon's default is none)."""
+
+    def get(self, path, params=None):
+        resp = self._session.get(path, params=params, timeout=WYOMING_TIMEOUT)
+        if resp.status_code != 200:
+            if resp.headers.get("Content-Type", "").startswith("text/html"):
+                text = resp.reason
+            else:
+                text = resp.text
+            raise requests.HTTPError(
+                f"Error accessing {resp.request.url}\n"
+                f"Server Error ({resp.status_code}: {text})"
+            )
+        return resp
+
 
 MAX_COMPARE_KM = 1500
 
@@ -144,7 +164,7 @@ def _fetch_sounding(wmo, t):
     if key in _SOUNDING_CACHE and (now - _SOUNDING_TS.get(key, 0)) < _SOUNDING_TTL:
         return _SOUNDING_CACHE[key]
     try:
-        df = WyomingUpperAir.request_data(t, wmo)
+        df = _TimeoutWyomingUpperAir.request_data(t, wmo)
         if df is not None and not df.empty:
             _SOUNDING_CACHE[key] = df
             _SOUNDING_TS[key] = now

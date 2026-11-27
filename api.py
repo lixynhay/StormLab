@@ -19,6 +19,7 @@ from clients.openmeteo_api import OpenMeteoAPI
 from clients.openweathermap_api import OpenWeatherMapAPI
 from clients.data_fusion import fuse_current_weather
 from core.storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
+from core.season_regime import get_regime
 from render.chart_builder import build_profile_chart
 from render.skewt_builder import build_skewt_chart
 from clients.geocoding import resolve_city
@@ -152,7 +153,15 @@ class AIAnalysisResponse(BaseModel):
     analysis: str
     timestamp: str
 
+def _regime_for(lat: float, lon: float) -> str:
+    """Seasonal regime for a REST request (same UTC-month heuristic as bot.py)."""
+    return get_regime(lat, datetime.now(timezone.utc).month)
+
+
 def _get_fused_data(lat: float, lon: float, time_index: int):
+    # Compute the regime BEFORE fuse_current_weather drops the top-level
+    # latitude/longitude of the raw Open-Meteo response.
+    regime = _regime_for(lat, lon)
     om_data = weather_api.get_current(lat, lon)
     pressure_data_raw = weather_api.get_pressure_levels(lat, lon)
     hourly_full = pressure_data_raw.get("hourly", {})
@@ -188,7 +197,12 @@ def _get_fused_data(lat: float, lon: float, time_index: int):
         }
         source_label = "Open-Meteo (Прогноз)"
 
-    return {"current": fused}, {"hourly": sliced_hourly}, source_label
+    return (
+        {"current": fused, "latitude": lat, "longitude": lon, "regime": regime},
+        {"hourly": sliced_hourly},
+        source_label,
+        regime,
+    )
 
 @app.get("/api/health")
 async def health_check():
@@ -212,8 +226,8 @@ async def get_storm_report(
     time_index: int = Query(0, ge=0, le=4, description="Индекс времени (0=сейчас, 1=+3ч, 2=+6ч, 3=+12ч, 4=+24ч)")
 ):
     try:
-        current_data, pressure_data, source_label = _get_fused_data(lat, lon, time_index)
-        report = build_storm_report(current_data, pressure_data)
+        current_data, pressure_data, source_label, regime = _get_fused_data(lat, lon, time_index)
+        report = build_storm_report(current_data, pressure_data, regime=regime)
         timestamp_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         formatted_text = format_storm_text(report, city, timestamp_str)
 
@@ -238,7 +252,7 @@ def get_profile_chart(
     time_index: int = Query(0, ge=0, le=4, description="Индекс времени")
 ):
     try:
-        _, pressure_data, _ = _get_fused_data(lat, lon, time_index)
+        _, pressure_data, _, regime = _get_fused_data(lat, lon, time_index)
         chart = build_profile_chart(pressure_data, city, f"t+{time_index}ч")
 
         if chart is None:
@@ -259,8 +273,8 @@ def get_skewt_chart(
     time_index: int = Query(0, ge=0, le=4, description="Индекс времени")
 ):
     try:
-        current_data, pressure_data, _ = _get_fused_data(lat, lon, time_index)
-        report = build_storm_report(current_data, pressure_data)
+        current_data, pressure_data, _, regime = _get_fused_data(lat, lon, time_index)
+        report = build_storm_report(current_data, pressure_data, regime=regime)
         current = current_data["current"]
         hourly = pressure_data["hourly"]
 
@@ -304,8 +318,8 @@ def get_radar(
 @app.post("/api/ai-analysis", response_model=AIAnalysisResponse)
 async def get_ai_analysis(request: AIAnalysisRequest):
     try:
-        current_data, pressure_data, _ = _get_fused_data(request.lat, request.lon, request.time_index)
-        report = build_storm_report(current_data, pressure_data)
+        current_data, pressure_data, _, regime = _get_fused_data(request.lat, request.lon, request.time_index)
+        report = build_storm_report(current_data, pressure_data, regime=regime)
 
         skewt_ctx = build_skewt_context_for_ai(report, current_data["current"], pressure_data)
         analysis = generate_storm_analysis(report, request.city, skewt_ctx)

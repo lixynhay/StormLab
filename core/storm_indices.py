@@ -17,8 +17,17 @@ logger = logging.getLogger(__name__)
 PRESSURE_LEVELS = [1000, 925, 850, 700, 500, 300]
 SKEWT_LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300]
 
-def interpret_cin(cin_value):
+def interpret_cin(cin_value, regime="warm"):
     cin_abs = abs(cin_value) if cin_value is not None else 0
+    if regime == "cool":
+        if cin_abs < 25:
+            return "🟢 Крышка отсутствует — зимняя конвекция возможна (thundersnow)"
+        elif cin_abs < 50:
+            return "🟡 Слабая крышка — возможны снежные заряды"
+        elif cin_abs < 200:
+            return "🟠 Умеренная крышка — для зимней конвекции нужен фронт/орография"
+        else:
+            return "🔴 Сильная крышка — зимние грозы маловероятны"
     if cin_abs < 25:
         return "🟢 Крышка отсутствует — свободная конвекция"
     elif cin_abs < 50:
@@ -27,6 +36,46 @@ def interpret_cin(cin_value):
         return "🟠 Умеренная крышка — нужен триггер (фронт, орография)"
     else:
         return "🔴 Сильная крышка — грозы маловероятны"
+
+
+def interpret_cape(cape, regime="warm"):
+    cape = cape or 0
+    if regime == "cool":
+        if cape < 100:
+            return "❄️ Недостаточно энергии даже для зимней конвекции"
+        elif cape < 200:
+            return "❄️ Слабая зимняя нестабильность"
+        elif cape < 500:
+            return "🌨 Умеренная зимняя нестабильность — возможен thundersnow"
+        elif cape < 1000:
+            return "🌨 Значимая зимняя конвекция (thundersnow/snow-squall)"
+        else:
+            return "❄️ Аномально высокий CAPE для холодного сезона — мощная зимняя конвекция"
+    if cape < 100:
+        return "конвекция невозможна"
+    elif cape < 500:
+        return "слабая нестабильность"
+    elif cape < 1000:
+        return "умеренная нестабильность"
+    elif cape < 2500:
+        return "сильная нестабильность"
+    return "экстремальная нестабильность"
+
+
+def interpret_lcl(lcl_height_m, regime="warm"):
+    if lcl_height_m is None:
+        return "н/д"
+    if regime == "cool":
+        if lcl_height_m < 1000:
+            return "🌨 Низкий LCL — влажный снег/ледяные ядра, риск snow-squall"
+        elif lcl_height_m <= 2500:
+            return "🌨 Умеренный LCL — зимняя конвекция возможна"
+        return "❄️ Высокий LCL — зимняя конвекция маловероятна"
+    if lcl_height_m < 1000:
+        return "Низкий LCL — благоприятен для торнадо"
+    elif lcl_height_m <= 2000:
+        return "Умеренный LCL"
+    return "Высокий LCL — конвекция выше и слабее"
 
 def interpret_stp(stp):
     if stp is None:
@@ -73,10 +122,19 @@ def interpret_mcs_maintenance(mcsm):
         return f"🟢 MCS не будет поддерживаться (score {mcsm['score']}/4)"
     return f"🔴 MCS устойчив (score {mcsm['score']}/4): {', '.join(mcsm['reasons'])}"
 
-def interpret_shear(bulk_shear_06):
+def interpret_shear(bulk_shear_06, regime="warm"):
     if bulk_shear_06 is None or bulk_shear_06 == 0:
         return "Нет данных о ветре на уровнях"
-    elif bulk_shear_06 < 10:
+    if regime == "cool":
+        if bulk_shear_06 < 10:
+            return "🟢 Слабый (разрозненная зимняя конвекция)"
+        elif bulk_shear_06 < 20:
+            return "🟡 Умеренный (снежные заряды/полосы)"
+        elif bulk_shear_06 < 30:
+            return "🟠 Сильный (snow-squall / зимний шквал)"
+        else:
+            return "🔴 Очень сильный (снежная буря / шквалистые линии)"
+    if bulk_shear_06 < 10:
         return "🟢 Слабый (одиночные ячейки)"
     elif bulk_shear_06 < 20:
         return "🟡 Умеренный (мультиячейковые грозы)"
@@ -476,7 +534,7 @@ def build_wind_profile(current, hourly, pressure_levels):
 
     return pressures, speeds, dirs
 
-def calculate_hodograph_shear_srh(current, hourly, pressure_levels):
+def calculate_hodograph_shear_srh(current, hourly, pressure_levels, regime="warm"):
     result = {
         "bulk_shear_06": 0, "bulk_shear_03": 0, "srh": 0, "srh_0_1": 0,
         "shear_interpretation": "Нет данных", "srh_method": "н/д",
@@ -505,7 +563,7 @@ def calculate_hodograph_shear_srh(current, hourly, pressure_levels):
 
         result["bulk_shear_06"] = round(float(np.hypot(shear06_u.to("m/s").magnitude, shear06_v.to("m/s").magnitude)), 1)
         result["bulk_shear_03"] = round(float(np.hypot(shear03_u.to("m/s").magnitude, shear03_v.to("m/s").magnitude)), 1)
-        result["shear_interpretation"] = interpret_shear(result["bulk_shear_06"])
+        result["shear_interpretation"] = interpret_shear(result["bulk_shear_06"], regime)
 
         try:
             right_mover, _, _ = mpcalc.bunkers_storm_motion(p, u, v, heights)
@@ -616,12 +674,21 @@ def calculate_brn(cape, bulk_shear_06):
 def calculate_threat_level(
     k, tt, li, cape=0, cin=0, shear_06=0, ehi=0, regime="warm", thresholds=None
 ):
+    """Report-only threat score (0-5); never used as an alert gate.
+
+    The cool first-ball CAPE floor is 150 here (alert_manager's CAPE_FLOOR is
+    100, and the seasonal alert ``cape_min`` is 200): three distinct numbers
+    for three distinct mechanisms. Do not unify them.
+    """
     from core.season_regime import thresholds_for
 
     thresholds = thresholds_for(regime) if thresholds is None else thresholds
     score = 0
     cin_abs = abs(cin) if cin else 0
-    if cape >= 250: score += 1
+    # Cool-season convection is significant at much lower CAPE, so the first
+    # threat point starts lower; the alert threshold itself stays at cape_min.
+    low_cape_floor = 150 if regime == "cool" else 250
+    if cape >= low_cape_floor: score += 1
     if cape >= 1000: score += 1
     if cape >= 2500: score += 1
     if k >= 30: score += 1
@@ -636,18 +703,21 @@ def calculate_threat_level(
         score += 1
     if shear_06 < 7: score -= 1
     if cin_abs > (thresholds["cin_max"] if regime == "cool" else 250): score -= 1
-    if cape < 250 and score > 2: score -= 1
+    if cape < low_cape_floor and score > 2: score -= 1
     if ehi is not None and ehi < 0: score -= 1  # Отрицательный EHI (левый суперячейковый режим) снижает риск
     return max(0, min(score, 5))
 
 def _threat_bar(level: int) -> str:
     return "🟥" * level + "⬜" * (5 - level)
 
-def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", thresholds=None) -> dict:
-    current = current_data["current"]
-    hourly = pressure_data.get("hourly", {})
-    report = {}
+def build_thermal_profile(current, hourly, levels=None):
+    """Build the raw thermodynamic profile, dropping levels below real surface pressure.
 
+    Surface pressure is the ground truth: at a 985 hPa surface, 1000 hPa is
+    underground and must not enter CAPE/CIN/LCL maths (non-monotonic profile,
+    MetPy "Interpolation point out of data bounds").
+    """
+    levels = PRESSURE_LEVELS if levels is None else levels
     surface_temp = current.get("temperature_2m")
     surface_dewpoint = current.get("dew_point_2m")
     surface_pressure = current.get("surface_pressure")
@@ -658,14 +728,29 @@ def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", t
         profile_temp.append(float(surface_temp))
         profile_dewpoint.append(float(surface_dewpoint))
 
-    for lvl in PRESSURE_LEVELS:
+    ground = float(surface_pressure) if surface_pressure is not None else (
+        profile_pressure[-1] if profile_pressure else None
+    )
+    for lvl in levels:
         t = hourly.get(f"temperature_{lvl}hPa", [None])[0]
         td = hourly.get(f"dew_point_{lvl}hPa", [None])[0]
-        if t is not None and td is not None:
-            if not profile_pressure or lvl < profile_pressure[-1]:
-                profile_pressure.append(float(lvl))
-                profile_temp.append(float(t))
-                profile_dewpoint.append(float(td))
+        if t is None or td is None:
+            continue
+        if ground is not None and lvl >= ground:
+            continue
+        profile_pressure.append(float(lvl))
+        profile_temp.append(float(t))
+        profile_dewpoint.append(float(td))
+
+    return profile_pressure, profile_temp, profile_dewpoint
+
+
+def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", thresholds=None) -> dict:
+    current = current_data["current"]
+    hourly = pressure_data.get("hourly", {})
+    report = {}
+
+    profile_pressure, profile_temp, profile_dewpoint = build_thermal_profile(current, hourly)
 
     if len(profile_pressure) >= 2:
         if not validate_profile_physical(profile_pressure, profile_temp):
@@ -686,10 +771,13 @@ def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", t
                 logger.debug("Using SBCAPE")
 
         report["cape"], report["cin"], report["lcl"], report["cape_type"] = cape, cin, lcl, cape_type
-        report["cin_interpretation"] = interpret_cin(cin)
+        report["cin_interpretation"] = interpret_cin(cin, regime)
     else:
         report["cape"], report["cin"], report["lcl"], report["cape_type"] = 0, 0, 0, "SB"
-        report["cin_interpretation"] = interpret_cin(0)
+        report["cin_interpretation"] = interpret_cin(0, regime)
+
+    report["regime"] = regime
+    report["cape_interpretation"] = interpret_cape(report.get("cape"), regime)
 
     # SPC fixed-layer STP is surface-based: "(sbCAPE / 1500 J kg-1) *
     # ((2000 - sbLCL) / 1000 m) * (0-1 km SRH / 150 m2 s-2) * (6BWD / 20 m s-1)"
@@ -734,7 +822,7 @@ def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", t
     else:
         report["error"] = "Недостаточно данных профиля"
 
-    report.update(calculate_hodograph_shear_srh(current, hourly, PRESSURE_LEVELS))
+    report.update(calculate_hodograph_shear_srh(current, hourly, PRESSURE_LEVELS, regime))
     
     report["ehi"] = calculate_ehi(
         report.get("cape"), report.get("srh"),
@@ -746,6 +834,7 @@ def build_storm_report(current_data: dict, pressure_data: dict, regime="warm", t
 
     lcl_height_m = lcl_pressure_to_height(report.get("lcl"))
     report["lcl_height_m"] = lcl_height_m
+    report["lcl_interpretation"] = interpret_lcl(lcl_height_m, regime)
     
     report["stp"] = calculate_stp(
         sb_cape, report.get("srh_0_1"),
@@ -910,8 +999,17 @@ def format_storm_text(report: dict, city: str, timestamp_str: str) -> str:
 
 def build_skewt_context_for_ai(report: dict, current: dict, pressure_data: dict) -> str:
     hourly = pressure_data.get("hourly", {})
+    regime = report.get("regime", "warm")
     lines = ["📊 ПОЛНЫЙ АНАЛИЗ АТМОСФЕРЫ (для AI):"]
     lines.append("=" * 50)
+    lines.append(f"Сезонный режим: {regime}")
+    if regime == "cool":
+        lines.append(
+            "❄️ СЕЗОН: холодный сезон (cool). Оценивай thundersnow / snow-squall / "
+            "зимнюю конвекцию; не называй её суперячейковой."
+        )
+    else:
+        lines.append("☀️ СЕЗОН: warm — классический конвективный режим.")
 
     cape = report.get("cape", 0) or 0
     cape_type = report.get("cape_type", "SB")
@@ -922,21 +1020,10 @@ def build_skewt_context_for_ai(report: dict, current: dict, pressure_data: dict)
     
     lines.append("")
     lines.append("📊 ТЕРМОДИНАМИКА:")
-    lines.append(f"  CAPE ({cape_type}): {cape} Дж/кг — " + (
-        "конвекция невозможна" if cape < 100 else
-        "слабая нестабильность" if cape < 500 else
-        "умеренная нестабильность" if cape < 1000 else
-        "сильная нестабильность" if cape < 2500 else
-        "экстремальная нестабильность"
-    ))
-    lines.append(f"  CIN: {abs(cin)} Дж/кг — " + (
-        "нет крышки" if abs(cin) < 25 else
-        "слабая крышка" if abs(cin) < 50 else
-        "умеренная крышка" if abs(cin) < 200 else
-        "сильная крышка"
-    ))
+    lines.append(f"  CAPE ({cape_type}): {cape} Дж/кг — " + interpret_cape(cape, regime))
+    lines.append(f"  CIN: {abs(cin)} Дж/кг — " + interpret_cin(cin, regime))
     if lcl_height:
-        lines.append(f"  LCL: {lcl} гПа (~{int(lcl_height)}м)")
+        lines.append(f"  LCL: {lcl} гПа (~{int(lcl_height)}м) — {interpret_lcl(lcl_height, regime)}")
     else:
         lines.append(f"  LCL: {lcl} гПа")
     
@@ -1010,14 +1097,7 @@ def build_skewt_context_for_ai(report: dict, current: dict, pressure_data: dict)
     try:
         s_t, s_td, s_p = current.get("temperature_2m"), current.get("dew_point_2m"), current.get("surface_pressure")
         if s_t is not None and s_td is not None and s_p is not None:
-            prof_p, prof_t, prof_td = [float(s_p)], [float(s_t)], [float(s_td)]
-            for lvl in PRESSURE_LEVELS:
-                t = hourly.get(f"temperature_{lvl}hPa", [None])[0]
-                td = hourly.get(f"dew_point_{lvl}hPa", [None])[0]
-                if t is not None and td is not None and lvl < prof_p[-1]:
-                    prof_p.append(float(lvl))
-                    prof_t.append(float(t))
-                    prof_td.append(float(td))
+            prof_p, prof_t, prof_td = build_thermal_profile(current, hourly)
             if len(prof_p) >= 2:
                 p, T, Td = (
                     np.array(prof_p) * units.hPa,
@@ -1042,7 +1122,10 @@ def build_skewt_context_for_ai(report: dict, current: dict, pressure_data: dict)
     lines.append("=" * 50)
     lines.append("🔍 ЗАДАЧА ДЛЯ AI:")
     lines.append("На основе всех данных выше, дай РАЗВЁРНУТЫЙ анализ:")
-    lines.append("1. Тип ожидаемых гроз (одиночные/мульти/суперячейки/MCS)")
+    if regime == "cool":
+        lines.append("1. Тип зимней конвекции (thundersnow/snow-squall/снежные полосы), а не суперячейки")
+    else:
+        lines.append("1. Тип ожидаемых гроз (одиночные/мульти/суперячейки/MCS)")
     lines.append("2. Вероятность опасных явлений (торнадо, град, шквалы)")
     lines.append("3. Пробьёт ли конвекция крышку (учитывая CIN и триггеры)")
     lines.append("4. Время максимальной активности (если есть данные о CAPE типе)")

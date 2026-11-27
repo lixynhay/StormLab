@@ -1,6 +1,8 @@
 import logging
 import time
 
+from config import GEMINI_API_TIMEOUT, LLM_REQUEST_TIMEOUT
+
 logger = logging.getLogger(__name__)
 
 
@@ -15,12 +17,15 @@ class BaseProvider:
 
 
 class OpenAICompatProvider(BaseProvider):
-    def __init__(self, name, api_key, base_url, model, extra_headers=None):
+    def __init__(self, name, api_key, base_url, model, extra_headers=None,
+                 timeout=None, max_retries=0):
         self.name = name
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
         self.extra_headers = extra_headers or {}
+        self.timeout = timeout or LLM_REQUEST_TIMEOUT
+        self.max_retries = max_retries
         self._client = None
     
     def is_available(self) -> bool:
@@ -33,6 +38,8 @@ class OpenAICompatProvider(BaseProvider):
                 api_key=self.api_key,
                 base_url=self.base_url,
                 default_headers=self.extra_headers,
+                timeout=self.timeout,
+                max_retries=self.max_retries,
             )
         return self._client
     
@@ -54,9 +61,10 @@ class OpenAICompatProvider(BaseProvider):
 class GeminiProvider(BaseProvider):
     name = "Gemini"
     
-    def __init__(self, api_key, model):
+    def __init__(self, api_key, model, timeout=None):
         self.api_key = api_key
         self.model = model or "gemini-2.0-flash"
+        self.timeout = timeout or GEMINI_API_TIMEOUT
         self._client = None
     
     def is_available(self) -> bool:
@@ -65,7 +73,11 @@ class GeminiProvider(BaseProvider):
     def _get_client(self):
         if self._client is None:
             from google import genai
-            self._client = genai.Client(api_key=self.api_key)
+            from google.genai import types
+            self._client = genai.Client(
+                api_key=self.api_key,
+                http_options=types.HttpOptions(timeout=int(self.timeout * 1000)),
+            )
         return self._client
     
     def generate(self, prompt: str) -> str:
@@ -134,6 +146,11 @@ def _parse_prompt_data(prompt: str) -> dict:
         "stp": grab("STP"),
         "scp": grab("SCP"),
         "dcape": grab("DCAPE"),
+        "regime": (
+            m.group(1).lower()
+            if (m := re.search(r"Сезонный режим:\s*(cool|warm)", prompt, re.IGNORECASE))
+            else "warm"
+        ),
     }
 
 
@@ -142,8 +159,29 @@ def _rule_based_analysis(d: dict, city: str) -> str:
     shear06, srh, ehi = d["shear06"], d["srh"], d["ehi"]
     tt, sweat = d["tt"], d["sweat"]
     stp, scp, dcape = d["stp"], d["scp"], d["dcape"]
-    
-    if stp >= 2.0:
+    regime = d.get("regime", "warm")
+
+    if regime == "cool":
+        if (
+            stp >= 2.0
+            or (scp >= 4.0 and cape >= 1000)
+            or (cape >= 1000 and shear06 >= 18 and srh >= 150)
+        ):
+            conv_type = "мощная зимняя конвекция (thundersnow/snow-squall)"
+            detail = (
+                "в холодном сезоне сочетание нестабильности и сильного сдвига даёт "
+                "thundersnow или snow-squall, а не суперячейки"
+            )
+        elif cape >= 200 and shear06 >= 20:
+            conv_type = "зимняя конвекция (thundersnow/snow-squall)"
+            detail = "низкий CAPE при сильном сдвиге зимой — прокси thundersnow/snow-squall"
+        elif cape >= 100 or k >= 20:
+            conv_type = "слабая зимняя конвекция / снежные заряды"
+            detail = "условия пограничные: возможны снежные заряды и локальный thundersnow"
+        else:
+            conv_type = "зимняя конвекция маловероятна"
+            detail = "недостаточно нестабильности и сдвига для thundersnow"
+    elif stp >= 2.0:
         conv_type = "торнадо-опасные суперячейки"
         detail = "STP ≥ 2.0 указывает на высокий потенциал значительных торнадо (EF1-EF3)"
     elif scp >= 4.0 and cape >= 1000:
@@ -165,7 +203,9 @@ def _rule_based_analysis(d: dict, city: str) -> str:
         conv_type = "конвекция маловероятна"
         detail = "недостаточно ни нестабильности, ни триггеров для развития гроз"
     
-    if cape >= 2500:
+    if regime == "cool" and 200 <= cape < 1000:
+        instab = "зимняя нестабильность (достаточна для thundersnow при сильном сдвиге)"
+    elif cape >= 2500:
         instab = "экстремальная нестабильность (CAPE очень высок)"
     elif cape >= 1000:
         instab = "сильная нестабильность"
@@ -176,7 +216,16 @@ def _rule_based_analysis(d: dict, city: str) -> str:
     else:
         instab = "атмосфера стабильна"
     
-    if shear06 >= 20:
+    if regime == "cool":
+        if shear06 >= 20:
+            shear_desc = "сдвиг ветра сильный — благоприятен для snow-squall/зимних шквалов"
+        elif shear06 >= 12:
+            shear_desc = "сдвиг умеренный — поддерживает снежные полосы"
+        elif shear06 >= 6:
+            shear_desc = "сдвиг слабый — зимняя конвекция будет разрозненной"
+        else:
+            shear_desc = "сдвиг минимальный — организация маловероятна"
+    elif shear06 >= 20:
         shear_desc = "сдвиг ветра сильный — благоприятен для суперячеек"
     elif shear06 >= 12:
         shear_desc = "сдвиг умеренный — поддерживает мультиячейковые структуры"
@@ -186,18 +235,31 @@ def _rule_based_analysis(d: dict, city: str) -> str:
         shear_desc = "сдвиг минимальный — организация маловероятна"
     
     hazards = []
-    if stp >= 1.0:
-        hazards.append("🌪 торнадо")
-    if dcape >= 1000:
-        hazards.append("💨 шквалы/микропорывы")
-    if cape >= 2500 and shear06 >= 15:
-        hazards.append("🧊 град")
-    if not hazards:
-        hazards.append("значимые опасные явления маловероятны")
+    if regime == "cool":
+        if cape >= 200 and shear06 >= 20:
+            hazards.append("❄️ thundersnow / snow-squall")
+        if dcape >= 1000:
+            hazards.append("💨 снежный шквал/микропорыв")
+        if cape >= 2500 and shear06 >= 15:
+            hazards.append("🧊 град/ледяные ядра")
+        if not hazards:
+            hazards.append("значимые зимние опасные явления маловероятны")
+    else:
+        if stp >= 1.0:
+            hazards.append("🌪 торнадо")
+        if dcape >= 1000:
+            hazards.append("💨 шквалы/микропорывы")
+        if cape >= 2500 and shear06 >= 15:
+            hazards.append("🧊 град")
+        if not hazards:
+            hazards.append("значимые опасные явления маловероятны")
     
     contradictions = []
     if cape >= 1000 and shear06 < 8:
-        contradictions.append("высокий CAPE при слабом сдвиге → суперячейки маловероятны")
+        if regime == "cool":
+            contradictions.append("высокий CAPE при слабом сдвиге → зимняя конвекция слабо организована")
+        else:
+            contradictions.append("высокий CAPE при слабом сдвиге → суперячейки маловероятны")
     if cape < 300 and shear06 >= 18:
         contradictions.append("сильный сдвиг при низкой нестабильности → мощная конвекция не разовьётся")
     if stp >= 2.0 and srh < 100:

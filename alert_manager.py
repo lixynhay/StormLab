@@ -1,21 +1,40 @@
+"""Alert subscriptions and seasonal danger checks.
+
+Three distinct CAPE numbers are deliberately NOT unified:
+- ``CAPE_FLOOR`` (alert_manager): early exit "is there any convection at all?"
+  -- warm 250, cool 100. Below the alert threshold in both regimes.
+- ``thresholds_for(regime)['cape_min']`` (core.season_regime): the real alert
+  condition, one of the >=3 conditions -- warm 1000, cool 200.
+- ``low_cape_floor`` (core.storm_indices.calculate_threat_level): first threat
+  score point -- warm 250, cool 150. A different mechanism (report score), not
+  the alert gate; it does not decide whether an alert is sent.
+"""
+
 import sqlite3
 import logging
 from pathlib import Path
 from typing import List, Dict, Optional
 
+from config import MAX_ALERTS_PER_USER
+from core.season_regime import thresholds_for
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path("data/alerts.db")
 
-THRESHOLDS = {
-    "cape_min": 1000,
-    "shear_06_min": 15,
-    "lcl_max": 1500,
-    "cin_max": 150,
-}
-
 ALERT_COOLDOWN_HOURS = 2
-CAPE_GATE = 250
+
+# CAPE floor is a cheap "is there any convection?" early exit, NOT the alert
+# threshold. It must sit BELOW the seasonal threshold so real cool-season
+# convection (CAPE 200-250) is not silently killed:
+#   warm: floor 250 < threshold 1000
+#   cool: floor 100 < threshold 200
+# NOTE: the cool threat-score first-ball floor lives in
+# core.storm_indices.calculate_threat_level and is 150, NOT 100. Different
+# mechanism (score point), intentionally a different constant.
+CAPE_FLOOR = {"warm": 250, "cool": 100}
+# Backward-compatible warm floor name (REST / self-check default regime).
+CAPE_GATE = CAPE_FLOOR["warm"]
 
 
 def init_db():
@@ -51,11 +70,62 @@ def init_db():
     logger.info("Alert database initialized")
 
 
+def location_key(lat, lon):
+    """Coarse coordinate key: subscriptions to the same city share one API request."""
+    return (round(float(lat), 2), round(float(lon), 2))
+
+
+def get_user_location_keys(user_id: int) -> set:
+    """Unique rounded coordinates already subscribed by the user."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT lat, lon FROM alerts WHERE user_id = ?", (user_id,))
+        keys = {
+            location_key(lat, lon)
+            for lat, lon in cursor.fetchall()
+            if lat is not None and lon is not None
+        }
+        conn.close()
+        return keys
+    except Exception as e:
+        logger.error(f"Failed to get alert locations: {e}")
+        return set()
+
+
+def group_alerts_by_location(alerts: List[Dict]) -> Dict[tuple, List[Dict]]:
+    """Group subscriptions by rounded coordinates so one city = one weather fetch."""
+    groups: Dict[tuple, List[Dict]] = {}
+    for alert in alerts:
+        lat, lon = alert.get("lat"), alert.get("lon")
+        if lat is not None and lon is not None:
+            key = location_key(lat, lon)
+        else:
+            key = ("city", alert.get("city"))
+        groups.setdefault(key, []).append(alert)
+    return groups
+
+
 def add_alert(user_id: int, username: Optional[str], city: str, lat: float, lon: float) -> bool:
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
+
+        cursor.execute("SELECT lat, lon FROM alerts WHERE user_id = ?", (user_id,))
+        keys = {
+            location_key(row_lat, row_lon)
+            for row_lat, row_lon in cursor.fetchall()
+            if row_lat is not None and row_lon is not None
+        }
+        key = location_key(lat, lon)
+        if key not in keys and len(keys) >= MAX_ALERTS_PER_USER:
+            conn.close()
+            logger.info(
+                f"Alert limit reached: user={user_id}, unique_locations={len(keys)}, "
+                f"max={MAX_ALERTS_PER_USER}"
+            )
+            return False
+
         cursor.execute("""
             INSERT OR IGNORE INTO alerts (user_id, username, city, lat, lon)
             VALUES (?, ?, ?, ?, ?)
@@ -187,10 +257,24 @@ def record_alert_sent(user_id: int, city: str):
         logger.error(f"Failed to record alert: {e}")
 
 
-def check_dangerous_conditions(report: Dict) -> Optional[str]:
+def check_dangerous_conditions(report: Dict, regime: str = "warm") -> Optional[str]:
+    """Check a storm report against seasonal alert thresholds.
+
+    ``CAPE_FLOOR`` is only an early exit ("any convection at all?"), while
+    ``thresholds_for(regime)`` holds the real alert conditions. The floor is
+    deliberately lower than the threshold in both regimes so cool-season
+    CAPE 200-250 can still produce a thundersnow/snow-squall alert.
+
+    Distinct numbers (not a typo):
+    - alert floor (this function): warm 250, cool 100;
+    - alert threshold ``cape_min`` (one of >=3 conditions): warm 1000, cool 200;
+    - threat-score first ball (calculate_threat_level, separate mechanism):
+      warm 250, cool 150. It never gates an alert.
+    """
     try:
+        thresholds = thresholds_for(regime)
         cape = report.get("cape") or 0
-        if cape < CAPE_GATE:
+        if cape < CAPE_FLOOR.get(regime, CAPE_FLOOR["warm"]):
             return None
         shear_06 = report.get("bulk_shear_06") or 0
         cin = abs(report.get("cin") or 0)
@@ -206,23 +290,30 @@ def check_dangerous_conditions(report: Dict) -> Optional[str]:
         
         reasons = []
         
-        if cape >= THRESHOLDS["cape_min"]:
+        if cape >= thresholds["cape_min"]:
             reasons.append(f"CAPE {cape} Дж/кг")
         
-        if shear_06 >= THRESHOLDS["shear_06_min"]:
+        if shear_06 >= thresholds["shear06_min"]:
             reasons.append(f"сдвиг 0-6 км {shear_06} м/с")
         
-        if lcl_meters is not None and 0 < lcl_meters <= THRESHOLDS["lcl_max"]:
+        if lcl_meters is not None and 0 < lcl_meters <= thresholds["lcl_max"]:
             reasons.append(f"низкий LCL ({int(lcl_meters)} м)")
         
-        if cin <= THRESHOLDS["cin_max"]:
+        if cin <= thresholds["cin_max"]:
             reasons.append(f"слабая крышка (CIN {cin} Дж/кг)")
         
         if len(reasons) >= 3:
             reason_text = ", ".join(reasons)
+            if regime == "cool":
+                return f"❄️ Высокий риск зимней конвекции (thundersnow/snow-squall): {reason_text}"
             return f"⚠️ Высокий риск организованных гроз: {reason_text}"
         
         if cape >= 2000 and shear_06 >= 20:
+            if regime == "cool":
+                return (
+                    f"❄️ Высокий риск thundersnow / snow-squall: "
+                    f"CAPE {cape} Дж/кг + сдвиг {shear_06} м/с"
+                )
             return f"⚠️ Высокий риск суперячеек: CAPE {cape} Дж/кг + сдвиг {shear_06} м/с"
         
         return None

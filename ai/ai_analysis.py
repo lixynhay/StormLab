@@ -8,10 +8,20 @@ logger.info(f"AI-цепочка провайдеров: {[p.name for p in _chain
 
 
 def _build_prompt(report: dict, city: str, skewt_ctx: str) -> str:
+    regime = report.get("regime", "warm")
+    if regime == "cool":
+        season_instruction = (
+            "Сезонный режим: cool (холодный сезон). Это зимняя конвекция: оценивай "
+            "thundersnow / snow-squall / снежные полосы, НЕ называй её суперячейковой, "
+            "если в данных нет явных признаков тёплого сезона."
+        )
+    else:
+        season_instruction = "Сезонный режим: warm (классический конвективный сезон)."
     return (
         f"Ты — профессиональный метеоролог-аналитик, специализирующийся на "
         f"конвективной метеорологии. Ниже — рассчитанные грозовые индексы для {city}. "
         f"Числа посчитаны термодинамическими формулами, не пересчитывай их.\n\n"
+        f"{season_instruction}\n\n"
         f"ВАЖНО: Используй ТОЛЬКО правильную русскую терминологию: одиночные ячейки, "
         f"мультиячейковые грозы, суперячейки, шквалистые линии. "
         f"Никогда не используй слово 'многоклеточные'.\n\n"
@@ -27,6 +37,7 @@ def _build_prompt(report: dict, city: str, skewt_ctx: str) -> str:
         f"сильный сдвиг при низком CAPE = нет мощной конвекции; STP высокий но SRH низкий = артефакт). "
         f"Если противоречий нет — напиши одной фразой 'Индексы согласованы между собой'.\n\n"
         f"Данные:\n"
+        f"Сезонный режим: {regime}\n"
         f"CAPE ({report.get('cape_type', 'SB')}): {report.get('cape')} Дж/кг | CIN: {abs(report.get('cin', 0))} Дж/кг | LCL: {report.get('lcl')} гПа\n"
         f"K-Index: {report.get('k_index')} | Total Totals: {report.get('total_totals')} | Lifted Index: {report.get('lifted_index')}\n"
         f"Showalter: {report.get('showalter_index')} | SWEAT: {report.get('sweat_index')} | Mid-layer spread: {report.get('mid_layer_spread')}°C\n"

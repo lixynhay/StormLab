@@ -23,6 +23,13 @@ API_TIMEOUT = 10
 API_RETRY_ATTEMPTS = 3
 API_RETRY_DELAY = 2
 
+# Явные таймауты для внешних сервисов, которые не должны вешать event loop/воркеры.
+WYOMING_TIMEOUT = 20          # один запрос к Wyoming/IGRA2 (siphon)
+SOUNDING_PROBE_TIMEOUT = 75   # весь probe_stations: 3 срока × 20 с + запас
+LLM_REQUEST_TIMEOUT = 20      # один вызов LLM-провайдера
+AI_ANALYSIS_TIMEOUT = 60      # вся цепочка AI-провайдеров
+IO_TIMEOUT = 45               # прочие to_thread-вызовы (геокод, данные, радар)
+
 RESTART_DELAY_SECONDS = 5
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -30,6 +37,9 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_API_TIMEOUT = 30
 GEMINI_RETRY_ATTEMPTS = 2
 GEMINI_RETRY_DELAY = 3
+
+# Лимит подписок на пользователя (уникальные координаты, округлённые до 0.01°).
+MAX_ALERTS_PER_USER = int(os.getenv("MAX_ALERTS_PER_USER", "5"))
 
 if not GEMINI_API_KEY:
     import logging
