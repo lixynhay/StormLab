@@ -17,6 +17,24 @@ logger = logging.getLogger(__name__)
 PRESSURE_LEVELS = [1000, 925, 850, 700, 500, 300]
 SKEWT_LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300]
 
+
+def _nd_render(value, missing="н/д"):
+    """Render a user-facing/AI-facing optional value: None -> «н/д».
+
+    Never literal «None», never 0.0 as a stand-in for missing data. Real zeros
+    are rendered as numbers (``0.0``), preserving fixed-field semantics.
+    """
+    return missing if value is None else str(value)
+
+
+def _as_float(value):
+    """Numeric guard for values that must stay numeric (e.g. abs(CIN))."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def interpret_cin(cin_value, regime="warm"):
     cin_abs = abs(cin_value) if cin_value is not None else 0
     if regime == "cool":
@@ -964,34 +982,41 @@ def format_storm_text(report: dict, city: str, timestamp_str: str) -> str:
     if "error" in report:
         return f"⚡ *ГРОЗОВЫЕ ИНДЕКСЫ: {city}*\n\n❌ Не удалось рассчитать индексы: данные неполные."
 
-    threat = report.get("threat_level", 0)
+    threat = report.get("threat_level", 0) or 0
+
+    dcape = report.get("dcape")
+    dcape_text = (
+        "н/д Дж/кг"
+        if dcape is None
+        else f"*{dcape}* Дж/кг — {_nd_render(report.get('dcape_interpretation'))}"
+    )
 
     text = (
         f"⚡ *ГРОЗОВЫЕ ИНДЕКСЫ: {city}*\n"
         f"🕐 {timestamp_str}\n\n"
         f"🔥 *Термодинамика*\n"
-        f"• CAPE ({report.get('cape_type', 'SB')}): *{report.get('cape')}* Дж/кг\n"
-        f"• CIN: *{abs(report.get('cin', 0))}* Дж/кг\n"
-        f"• LCL: *{report.get('lcl')}* гПа\n\n"
+        f"• CAPE ({_nd_render(report.get('cape_type', 'SB'))}): *{_nd_render(report.get('cape'))}* Дж/кг\n"
+        f"• CIN: *{abs(_as_float(report.get('cin')))}* Дж/кг\n"
+        f"• LCL: *{_nd_render(report.get('lcl'))}* гПа\n\n"
         f"📉 *Устойчивость*\n"
-        f"• K-Index: *{report.get('k_index')}* — {report.get('k_interpretation')}\n"
-        f"• Total Totals: *{report.get('total_totals')}* — {report.get('tt_interpretation')}\n"
-        f"• Lifted Index: *{report.get('lifted_index')}* — {report.get('li_interpretation')}\n"
-        f"• Mid-layer spread: *{report.get('mid_layer_spread')}*°C\n\n"
+        f"• K-Index: *{_nd_render(report.get('k_index'))}* — {_nd_render(report.get('k_interpretation'))}\n"
+        f"• Total Totals: *{_nd_render(report.get('total_totals'))}* — {_nd_render(report.get('tt_interpretation'))}\n"
+        f"• Lifted Index: *{_nd_render(report.get('lifted_index'))}* — {_nd_render(report.get('li_interpretation'))}\n"
+        f"• Mid-layer spread: *{_nd_render(report.get('mid_layer_spread'))}*°C\n\n"
         f"🌪 *Динамика (Суперячейки)*\n"
-        f"• Shear 0-6км: *{report.get('bulk_shear_06')}* м/с — {report.get('shear_interpretation')}\n"
-        f"• Shear 0-3км: *{report.get('bulk_shear_03')}* м/с\n"
-        f"• SRH 0-3км: *{report.get('srh')}* м²/с² ({report.get('srh_method')})\n\n"
+        f"• Shear 0-6км: *{_nd_render(report.get('bulk_shear_06'))}* м/с — {_nd_render(report.get('shear_interpretation'))}\n"
+        f"• Shear 0-3км: *{_nd_render(report.get('bulk_shear_03'))}* м/с\n"
+        f"• SRH 0-3км: *{_nd_render(report.get('srh'))}* м²/с² ({_nd_render(report.get('srh_method'))})\n\n"
         f"🎯 *Композитные (Шторм-чейзинг)*\n"
-        f"• STP (торнадо): *{report.get('stp', 'н/д')}* — {report.get('stp_interpretation')}\n"
-        f"• STP(eff): *{report.get('stp_eff', 'н/д')}*\n"
-        f"• SCP (local, не SPC): *{report.get('scp', 'н/д')}* — {report.get('scp_interpretation')}\n"
-        f"• SCP(eff): *{report.get('scp_eff', 'н/д')}*\n"
-        f"• DCAPE (шквалы): *{report.get('dcape', 'н/д')}* Дж/кг — {report.get('dcape_interpretation')}\n"
-        f"• MCS: {report.get('mcsm_interpretation')}\n\n"
+        f"• STP (торнадо): *{_nd_render(report.get('stp'))}* — {_nd_render(report.get('stp_interpretation'))}\n"
+        f"• STP(eff): *{_nd_render(report.get('stp_eff'))}*\n"
+        f"• SCP (local, не SPC): *{_nd_render(report.get('scp'))}* — {_nd_render(report.get('scp_interpretation'))}\n"
+        f"• SCP(eff): *{_nd_render(report.get('scp_eff'))}*\n"
+        f"• DCAPE (шквалы): {dcape_text}\n"
+        f"• MCS: {_nd_render(report.get('mcsm_interpretation'))}\n\n"
         f"📊 *Дополнительно*\n"
-        f"• Showalter: *{report.get('showalter_index')}* | SWEAT: *{report.get('sweat_index')}*\n"
-        f"• EHI: *{report.get('ehi', 'н/д')}* | BRN: *{report.get('brn', 'н/д')}*\n\n"
+        f"• Showalter: *{_nd_render(report.get('showalter_index'))}* | SWEAT: *{_nd_render(report.get('sweat_index'))}*\n"
+        f"• EHI: *{_nd_render(report.get('ehi'))}* | BRN: *{_nd_render(report.get('brn'))}*\n\n"
         f"⚠️ *Уровень угрозы:* {_threat_bar(threat)} *{threat}/5*\n\n"
         f"_Расчёт по доступному профилю. Не заменяет официальный прогноз._"
     )
@@ -1012,11 +1037,11 @@ def build_skewt_context_for_ai(report: dict, current: dict, pressure_data: dict)
         lines.append("☀️ СЕЗОН: warm — классический конвективный режим.")
 
     cape = report.get("cape", 0) or 0
-    cape_type = report.get("cape_type", "SB")
+    cape_type = _nd_render(report.get("cape_type", "SB"))
     cin = report.get("cin", 0) or 0
     lcl = report.get("lcl", 0) or 0
     lcl_height = report.get("lcl_height_m")
-    threat = report.get("threat_level", 0)
+    threat = report.get("threat_level", 0) or 0
     
     lines.append("")
     lines.append("📊 ТЕРМОДИНАМИКА:")
@@ -1029,33 +1054,37 @@ def build_skewt_context_for_ai(report: dict, current: dict, pressure_data: dict)
     
     lines.append("")
     lines.append("📊 ИНДЕКСЫ УСТОЙЧИВОСТИ:")
-    if report.get("k_index"): lines.append(f"  K-Index: {report['k_index']} — {report.get('k_interpretation', '')}")
-    if report.get("total_totals"): lines.append(f"  Total Totals: {report['total_totals']} — {report.get('tt_interpretation', '')}")
-    if report.get("lifted_index"): lines.append(f"  Lifted Index: {report['lifted_index']} — {report.get('li_interpretation', '')}")
-    if report.get("showalter_index"): lines.append(f"  Showalter: {report['showalter_index']} — {report.get('si_interpretation', '')}")
-    if report.get("sweat_index"): lines.append(f"  SWEAT: {report['sweat_index']} — {report.get('sweat_interpretation', '')}")
+    if report.get("k_index"): lines.append(f"  K-Index: {report['k_index']} — {_nd_render(report.get('k_interpretation'))}")
+    if report.get("total_totals"): lines.append(f"  Total Totals: {report['total_totals']} — {_nd_render(report.get('tt_interpretation'))}")
+    if report.get("lifted_index"): lines.append(f"  Lifted Index: {report['lifted_index']} — {_nd_render(report.get('li_interpretation'))}")
+    if report.get("showalter_index"): lines.append(f"  Showalter: {report['showalter_index']} — {_nd_render(report.get('si_interpretation'))}")
+    if report.get("sweat_index"): lines.append(f"  SWEAT: {report['sweat_index']} — {_nd_render(report.get('sweat_interpretation'))}")
     
     lines.append("")
     lines.append("📊 ДИНАМИКА (ветер/сдвиг):")
-    lines.append(f"  Bulk Shear 0-6км: {report.get('bulk_shear_06', 'н/д')} м/с — {report.get('shear_interpretation', '')}")
-    lines.append(f"  Bulk Shear 0-3км: {report.get('bulk_shear_03', 'н/д')} м/с")
-    lines.append(f"  SRH 0-3км: {report.get('srh', 'н/д')} м²/с² ({report.get('srh_method', '')})")
+    lines.append(f"  Bulk Shear 0-6км: {_nd_render(report.get('bulk_shear_06'))} м/с — {_nd_render(report.get('shear_interpretation'))}")
+    lines.append(f"  Bulk Shear 0-3км: {_nd_render(report.get('bulk_shear_03'))} м/с")
+    lines.append(f"  SRH 0-3км: {_nd_render(report.get('srh'))} м²/с² ({_nd_render(report.get('srh_method'))})")
     
     lines.append("")
     lines.append("📊 КОМПОЗИТНЫЕ ИНДЕКСЫ (шторм-чейзинг):")
-    stp = report.get("stp")
-    scp = report.get("scp")
-    dcape = report.get("dcape")
-    mcsm = report.get("mcs_maintenance")
     ehi = report.get("ehi")
     brn = report.get("brn")
     
-    lines.append(f"  🌪 STP (торнадо): {stp} — {report.get('stp_interpretation', '')}")
-    lines.append(f"  ⚡ SCP (суперячейки): {scp} — {report.get('scp_interpretation', '')}")
-    lines.append(f"  💨 DCAPE (шквалы): {dcape} Дж/кг — {report.get('dcape_interpretation', '')}")
-    lines.append(f"  📏 MCS Maintenance: {report.get('mcsm_interpretation', '')}")
-    if ehi: lines.append(f"  EHI (энергия-спиральность): {ehi} — {report.get('ehi_interpretation', '')}")
-    if brn: lines.append(f"  BRN (Bulk Richardson): {brn} — {report.get('brn_interpretation', '')}")
+    lines.append(f"  🌪 STP (торнадо): {_nd_render(report.get('stp'))} — {_nd_render(report.get('stp_interpretation'))}")
+    lines.append(f"  🌪 STP (effective): {_nd_render(report.get('stp_eff'))}")
+    lines.append(f"  ⚡ SCP (суперячейки): {_nd_render(report.get('scp'))} — {_nd_render(report.get('scp_interpretation'))}")
+    lines.append(f"  ⚡ SCP (effective): {_nd_render(report.get('scp_eff'))}")
+    dcape = report.get("dcape")
+    dcape_text = (
+        "н/д Дж/кг"
+        if dcape is None
+        else f"{_nd_render(dcape)} Дж/кг — {_nd_render(report.get('dcape_interpretation'))}"
+    )
+    lines.append(f"  💨 DCAPE (шквалы): {dcape_text}")
+    lines.append(f"  📏 MCS Maintenance: {_nd_render(report.get('mcsm_interpretation'))}")
+    if ehi: lines.append(f"  EHI (энергия-спиральность): {ehi} — {_nd_render(report.get('ehi_interpretation'))}")
+    if brn: lines.append(f"  BRN (Bulk Richardson): {brn} — {_nd_render(report.get('brn_interpretation'))}")
     
     lines.append("")
     lines.append(f"📊 ОБЩИЙ УРОВЕНЬ УГРОЗЫ: {threat}/5 {_threat_bar(threat)}")

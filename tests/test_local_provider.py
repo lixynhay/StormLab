@@ -6,6 +6,7 @@ from pathlib import Path
 import ai.ai_analysis as ai_analysis
 from ai.ai_providers import LocalProvider, OpenAICompatProvider, _rule_based_analysis
 from core.season_regime import thresholds_for
+from core.storm_indices import build_skewt_context_for_ai, format_storm_text
 
 
 def _cool_report():
@@ -148,5 +149,177 @@ def test_t1_to_t6_still_green_after_none_guard():
         test_bracketed_prompt_labels_cannot_cause_silent_zero,
         test_regime_read_from_report_not_prompt,
         test_no_unverified_literal_thresholds_in_rule_based_analysis,
+    ):
+        fn()
+
+
+# ------------------------------------------------------------------ 2.7 render parity
+
+# t10
+def test_format_storm_text_renders_none_eff_and_dcape_as_nd():
+    report = {
+        "cape": 400, "cin": -40, "lcl": 900, "k_index": 25,
+        "total_totals": 45, "lifted_index": -3, "mid_layer_spread": 8,
+        "bulk_shear_06": 25, "bulk_shear_03": 14, "srh": 200, "srh_method": "fixed",
+        "k_interpretation": "умеренная", "tt_interpretation": "умеренная",
+        "li_interpretation": "умеренная", "stp_interpretation": "н/д",
+        "scp_interpretation": "н/д", "shear_interpretation": "сильный",
+        "stp": 0.0, "stp_eff": None, "scp": 0.0, "scp_eff": None,
+        "dcape": None, "dcape_interpretation": "н/д",
+        "mcsm_interpretation": "н/д", "showalter_index": -1,
+        "sweat_index": 180, "ehi": 0.1, "brn": 3, "threat_level": 1,
+        "regime": "cool",
+    }
+    text = format_storm_text(report, "OKC", "2026-01-15 12:00 UTC")
+    assert "None" not in text
+    assert "STP(eff): *н/д*" in text
+    assert "SCP(eff): *н/д*" in text
+    assert "DCAPE (шквалы): н/д Дж/кг" in text
+    assert "н/д Дж/кг — н/д" not in text
+    assert "STP (торнадо): *0.0*" in text
+    assert "SCP (local, не SPC): *0.0*" in text
+
+
+# t11
+def test_hazards_fallback_is_regime_driven_not_cape_driven():
+    warm = {"regime": "warm", "cape": 0, "bulk_shear_06": 0, "dcape": None}
+    cool = dict(warm, regime="cool")
+    warm_text = _rule_based_analysis(warm, "Оклахома")
+    cool_text = _rule_based_analysis(cool, "Омск")
+    assert "значимые опасные явления маловероятны" in warm_text
+    assert "зимн" not in warm_text
+    assert "значимые зимние опасные явления маловероятны" in cool_text
+    assert "зимн" in cool_text
+
+
+# t12
+def test_storm_and_ai_render_eff_dcape_identically():
+    report = _cool_report()
+    report.update({"stp_eff": None, "scp_eff": None, "dcape": None,
+                   "stp": 0.0, "scp": 0.0, "showalter_index": -1,
+                   "sweat_index": 180, "ehi": 0.1, "brn": 3,
+                   "mcsm_interpretation": "н/д", "srh_method": "fixed",
+                   "mid_layer_spread": 8,
+                   "k_interpretation": "умеренная", "tt_interpretation": "умеренная",
+                   "li_interpretation": "умеренная", "stp_interpretation": "н/д",
+                   "scp_interpretation": "н/д", "shear_interpretation": "сильный"})
+    storm_text = format_storm_text(report, "OKC", "2026-01-15 12:00 UTC")
+    ai_text = LocalProvider().generate(report=report, city="OKC")
+
+    assert "None" not in storm_text and "None" not in ai_text
+    assert "STP(eff): *н/д*" in storm_text
+    assert "SCP(eff): *н/д*" in storm_text
+    assert "DCAPE (шквалы): н/д Дж/кг" in storm_text
+    assert "STP(effective)=н/д" in ai_text
+    assert "SCP(effective)=н/д" in ai_text
+    assert "DCAPE=н/д Дж/кг" in ai_text
+
+
+# t13
+def test_t1_to_t12_still_green_after_render_fix():
+    for fn in (
+        test_cool_profile_is_winter_dangerous,
+        test_warm_low_shear_profile_is_not_dangerous,
+        test_cape_zero_is_no_convection_in_both_regimes,
+        test_bracketed_prompt_labels_cannot_cause_silent_zero,
+        test_regime_read_from_report_not_prompt,
+        test_no_unverified_literal_thresholds_in_rule_based_analysis,
+        test_external_providers_keep_prompt_only_signature,
+        test_no_scraper_helpers_left,
+        test_okc_winter_none_eff_fields_are_rendered_as_nd,
+        test_cape_zero_with_dcape_none_is_no_convection_and_no_crash,
+        test_t1_to_t6_still_green_after_none_guard,
+        test_format_storm_text_renders_none_eff_and_dcape_as_nd,
+        test_hazards_fallback_is_regime_driven_not_cape_driven,
+        test_storm_and_ai_render_eff_dcape_identically,
+    ):
+        fn()
+
+
+# ------------------------------------------------------------------ 2.7b full None-guard
+
+# t14
+def test_skewt_context_has_no_literal_none():
+    report = _cool_report()
+    report.update({
+        "dcape": None, "stp_eff": None, "scp_eff": None,
+        "shear_interpretation": None, "cape_type": None, "srh_method": None,
+        "stp_interpretation": None, "mcsm_interpretation": None,
+    })
+    text = build_skewt_context_for_ai(report, {}, {"hourly": {}})
+    assert "None" not in text
+    assert "STP (effective): н/д" in text
+    assert "SCP (effective): н/д" in text
+    assert "💨 DCAPE (шквалы): н/д Дж/кг" in text
+    assert "н/д Дж/кг —" not in text
+    assert "CAPE (н/д):" in text
+
+
+# t15
+def test_format_storm_text_missing_interpretations_have_no_literal_none():
+    report = {
+        "cape": 400, "cin": -40, "lcl": 900, "k_index": 25,
+        "total_totals": 45, "lifted_index": -3, "mid_layer_spread": None,
+        "bulk_shear_06": 25, "bulk_shear_03": 14, "srh": 200, "srh_method": None,
+        "stp": 0.0, "stp_eff": None, "scp": 0.0, "scp_eff": None,
+        "dcape": None, "ehi": None, "brn": None,
+        "showalter_index": None, "sweat_index": None,
+        # all *_interpretation keys intentionally absent
+    }
+    text = format_storm_text(report, "OKC", "2026-01-15 12:00 UTC")
+    assert "None" not in text
+    assert "K-Index: *25* — н/д" in text
+    assert "Shear 0-6км: *25* м/с — н/д" in text
+    assert "Mid-layer spread: *н/д*°C" in text
+    assert "EHI: *н/д* | BRN: *н/д*" in text
+
+
+# t16
+def test_storm_and_skewt_render_eff_dcape_identically():
+    report = _cool_report()
+    report.update({
+        "dcape": None, "stp_eff": None, "scp_eff": None,
+        "stp": 0.0, "scp": 0.0, "showalter_index": -1, "sweat_index": 180,
+        "ehi": 0.1, "brn": 3, "srh_method": "fixed", "mid_layer_spread": 8,
+        "k_interpretation": "x", "tt_interpretation": "x", "li_interpretation": "x",
+        "stp_interpretation": "x", "scp_interpretation": "x",
+    })
+    storm_text = format_storm_text(report, "OKC", "2026-01-15 12:00 UTC")
+    skewt_text = build_skewt_context_for_ai(report, {}, {"hourly": {}})
+
+    for text in (storm_text, skewt_text):
+        assert "None" not in text
+        assert "н/д" in text
+    assert "STP(eff): *н/д*" in storm_text
+    assert "SCP(eff): *н/д*" in storm_text
+    assert "STP (effective): н/д" in skewt_text
+    assert "SCP (effective): н/д" in skewt_text
+    assert "DCAPE (шквалы): н/д Дж/кг" in storm_text
+    assert "DCAPE (шквалы): н/д Дж/кг" in skewt_text
+    assert "STP (торнадо): *0.0*" in storm_text
+    assert "STP (торнадо): 0.0" in skewt_text
+
+
+# t17
+def test_t1_to_t16_still_green_after_full_none_guard():
+    for fn in (
+        test_cool_profile_is_winter_dangerous,
+        test_warm_low_shear_profile_is_not_dangerous,
+        test_cape_zero_is_no_convection_in_both_regimes,
+        test_bracketed_prompt_labels_cannot_cause_silent_zero,
+        test_regime_read_from_report_not_prompt,
+        test_no_unverified_literal_thresholds_in_rule_based_analysis,
+        test_external_providers_keep_prompt_only_signature,
+        test_no_scraper_helpers_left,
+        test_okc_winter_none_eff_fields_are_rendered_as_nd,
+        test_cape_zero_with_dcape_none_is_no_convection_and_no_crash,
+        test_t1_to_t6_still_green_after_none_guard,
+        test_format_storm_text_renders_none_eff_and_dcape_as_nd,
+        test_hazards_fallback_is_regime_driven_not_cape_driven,
+        test_storm_and_ai_render_eff_dcape_identically,
+        test_t1_to_t12_still_green_after_render_fix,
+        test_skewt_context_has_no_literal_none,
+        test_format_storm_text_missing_interpretations_have_no_literal_none,
+        test_storm_and_skewt_render_eff_dcape_identically,
     ):
         fn()
