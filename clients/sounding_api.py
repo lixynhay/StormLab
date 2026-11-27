@@ -10,6 +10,7 @@ import requests
 from siphon.simplewebservice.wyoming import WyomingUpperAir
 
 from config import WYOMING_TIMEOUT
+from core.locks import get_lock
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ _STATION_LINE_RE = re.compile(
 )
 _NET_WARN_INTERVAL = 300
 _NET_WARN_TS = {}
+_SOUNDING_LOCK = get_lock("sounding_api")
 
 
 def _haversine(lat1, lon1, lat2, lon2):
@@ -115,8 +117,10 @@ def _parse_station_list(text):
 
 def _load_stations():
     now = time.time()
-    if _STATIONS_CACHE["df"] is not None and (now - _STATIONS_CACHE["ts"]) < _STATIONS_CACHE["ttl"]:
-        return _STATIONS_CACHE["df"]
+    with _SOUNDING_LOCK:
+        cached = _STATIONS_CACHE["df"]
+        if cached is not None and (now - _STATIONS_CACHE["ts"]) < _STATIONS_CACHE["ttl"]:
+            return cached
     clean, ttl = None, 7 * 86400
     try:
         resp = requests.get(_STATION_LIST_URL, timeout=_STATION_LIST_TIMEOUT)
@@ -132,7 +136,8 @@ def _load_stations():
             _log_network_unavailable("station catalog", e)
         else:
             _log_integration_error("station catalog", e)
-    _STATIONS_CACHE.update({"ts": now, "df": clean, "ttl": ttl})
+    with _SOUNDING_LOCK:
+        _STATIONS_CACHE.update({"ts": now, "df": clean, "ttl": ttl})
     return clean
 
 
@@ -161,13 +166,15 @@ def _candidate_times():
 def _fetch_sounding(wmo, t):
     key = (wmo, t.isoformat())
     now = time.time()
-    if key in _SOUNDING_CACHE and (now - _SOUNDING_TS.get(key, 0)) < _SOUNDING_TTL:
-        return _SOUNDING_CACHE[key]
+    with _SOUNDING_LOCK:
+        if key in _SOUNDING_CACHE and (now - _SOUNDING_TS.get(key, 0)) < _SOUNDING_TTL:
+            return _SOUNDING_CACHE[key]
     try:
         df = _TimeoutWyomingUpperAir.request_data(t, wmo)
         if df is not None and not df.empty:
-            _SOUNDING_CACHE[key] = df
-            _SOUNDING_TS[key] = now
+            with _SOUNDING_LOCK:
+                _SOUNDING_CACHE[key] = df
+                _SOUNDING_TS[key] = now
             logger.info(f"Sounding OK wmo={wmo} time={t:%d.%m %HZ}")
             return df
     except Exception as e:
@@ -202,8 +209,10 @@ def _probe_one(row):
 def probe_stations(lat, lon, k=4):
     key = (round(lat, 1), round(lon, 1))
     now = time.time()
-    if key in _PROBE_CACHE and (now - _PROBE_CACHE[key][0]) < _PROBE_TTL:
-        return _PROBE_CACHE[key][1]
+    with _SOUNDING_LOCK:
+        hit = _PROBE_CACHE.get(key)
+        if hit and (now - hit[0]) < _PROBE_TTL:
+            return hit[1]
     near = _nearest(lat, lon, k)
     if near.empty:
         return []
@@ -214,5 +223,6 @@ def probe_stations(lat, lon, k=4):
         result = []
     else:
         result = [r for r in result if r["dist_km"] <= MAX_COMPARE_KM]
-    _PROBE_CACHE[key] = (now, result)
+    with _SOUNDING_LOCK:
+        _PROBE_CACHE[key] = (now, result)
     return result

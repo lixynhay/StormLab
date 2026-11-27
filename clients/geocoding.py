@@ -1,10 +1,12 @@
 import logging
 import requests
 from config import API_TIMEOUT
+from core.locks import get_lock
 
 logger = logging.getLogger(__name__)
 
 _GEO_CACHE = {}
+_GEO_LOCK = get_lock("geocoding")
 _GEO_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
 
@@ -13,9 +15,10 @@ def resolve_city(query: str):
         return None
 
     key = query.strip().lower()
-    if key in _GEO_CACHE:
-        logger.debug(f"Geo cache HIT: {key}")
-        return _GEO_CACHE[key]
+    with _GEO_LOCK:
+        if key in _GEO_CACHE:
+            logger.debug(f"Geo cache HIT: {key}")
+            return _GEO_CACHE[key]
 
     try:
         resp = requests.get(
@@ -43,7 +46,11 @@ def resolve_city(query: str):
         display_name = ", ".join(parts)
 
         result = (lat, lon, display_name)
-        _GEO_CACHE[key] = result
+        with _GEO_LOCK:
+            current = _GEO_CACHE.get(key)
+            if current is not None:
+                return current
+            _GEO_CACHE[key] = result
         logger.info(f"Geo resolved: {query} -> {display_name} ({lat}, {lon})")
         return result
 

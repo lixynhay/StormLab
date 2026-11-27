@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 import requests
 
 from config import API_RETRY_ATTEMPTS, API_RETRY_DELAY, API_TIMEOUT, DEFAULT_LAT, DEFAULT_LON
+from core.locks import get_lock
 from core.storm_indices import SKEWT_LEVELS
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,7 @@ class OpenMeteoAPI:
             "pressure_levels": 1800,
             "precipitation_nowcast": 300,
         }
+        self._cache_lock = get_lock("openmeteo_api")
 
     def _cache_ttl_for(self, full_key: str) -> int:
         for name, ttl in self._cache_ttl.items():
@@ -145,13 +147,13 @@ class OpenMeteoAPI:
         if cache_key:
             full_key = f"{cache_key}_{params.get('latitude', '')}_{params.get('longitude', '')}"
             if full_key in self._cache:
-                ttl = self._cache_ttl_for(full_key)
-                age = (datetime.now() - self._cache_timestamps.get(full_key, datetime.min)).total_seconds()
+                with self._cache_lock:
+                    ttl = self._cache_ttl_for(full_key)
+                    age = (datetime.now() - self._cache_timestamps.get(full_key, datetime.min)).total_seconds()
 
-                if age < ttl:
-                    logger.debug(f"Cache HIT: {full_key} (age: {age:.0f}s, TTL: {ttl}s)")
-                    return self._cache[full_key]
-                else:
+                    if age < ttl:
+                        logger.debug(f"Cache HIT: {full_key} (age: {age:.0f}s, TTL: {ttl}s)")
+                        return self._cache[full_key]
                     logger.debug(f"Cache EXPIRED: {full_key} (age: {age:.0f}s, TTL: {ttl}s)")
 
         last_error = None
@@ -183,9 +185,10 @@ class OpenMeteoAPI:
                     raise ValueError("Invalid response: missing hourly/current data")
 
                 if full_key:
-                    self._cache[full_key] = data
-                    self._cache_timestamps[full_key] = datetime.now()
-                    self._cleanup_cache()
+                    with self._cache_lock:
+                        self._cache[full_key] = data
+                        self._cache_timestamps[full_key] = datetime.now()
+                        self._cleanup_cache()
                     logger.info(f"Data cached: {full_key}")
 
                 return data
@@ -272,6 +275,7 @@ class OpenMeteoAPI:
         return self._make_request(params, cache_key="precipitation_nowcast", lat=lat, lon=lon)
 
     def clear_cache(self):
-        self._cache.clear()
-        self._cache_timestamps.clear()
+        with self._cache_lock:
+            self._cache.clear()
+            self._cache_timestamps.clear()
         logger.info("Cache cleared")

@@ -1,4 +1,6 @@
 import asyncio
+import threading
+from collections import OrderedDict
 import logging
 import os
 import pickle
@@ -10,7 +12,6 @@ from telegram.constants import ParseMode
 from telegram.error import TimedOut, NetworkError, Forbidden
 from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler, ContextTypes, JobQueue,
-    PicklePersistence,
 )
 from telegram.request import HTTPXRequest
 
@@ -19,6 +20,7 @@ from config import (
     SOUNDING_PROBE_TIMEOUT, MAX_ALERTS_PER_USER,
 )
 from logging_config import setup_logging
+from persistence import AtomicPicklePersistence
 from clients.openmeteo_api import OpenMeteoAPI, resolve_hour_index
 from clients.openweathermap_api import OpenWeatherMapAPI
 from clients.data_fusion import fuse_current_weather
@@ -50,7 +52,28 @@ def md(text: str) -> str:
 
 weather_api = OpenMeteoAPI()
 owm_api = OpenWeatherMapAPI()
-_skewt_ctx = {}
+_skewt_ctx: "OrderedDict[tuple[int, int], tuple]" = OrderedDict()
+_skewt_ctx_lock = threading.Lock()
+_SKEWT_MAX = 512
+
+
+def put_skewt_ctx(chat_id: int, msg_id: int, value) -> None:
+    with _skewt_ctx_lock:
+        key = (chat_id, msg_id)
+        _skewt_ctx[key] = value
+        _skewt_ctx.move_to_end(key)
+        while len(_skewt_ctx) > _SKEWT_MAX:
+            _skewt_ctx.popitem(last=False)
+
+
+def get_skewt_ctx(chat_id: int, msg_id: int):
+    with _skewt_ctx_lock:
+        return _skewt_ctx.get((chat_id, msg_id))
+
+
+def drop_skewt_ctx(chat_id: int, msg_id: int) -> None:
+    with _skewt_ctx_lock:
+        _skewt_ctx.pop((chat_id, msg_id), None)
 
 TIME_OFFSETS = [
     {"label": "Сейчас", "hours": 0},
@@ -61,10 +84,8 @@ TIME_OFFSETS = [
 ]
 
 def _prune_ctx():
-    if len(_skewt_ctx) > 200:
-        keys = sorted(_skewt_ctx.keys(), key=str)
-        for k in keys[:50]:
-            _skewt_ctx.pop(k, None)
+    """Kept for backwards compatibility; put_skewt_ctx() now bounds the dict."""
+
 
 
 def _prune_user_data(context):
@@ -319,10 +340,9 @@ async def _send_skewt(message_target, lat, lon, city, time_index, time_label, co
     msg = await message_target.reply_photo(photo=chart, caption=caption, reply_markup=markup, parse_mode="Markdown")
     
     context.user_data["last_skewt_messages"] = [msg.message_id]
-    _skewt_ctx[(message_target.chat.id, msg.message_id)] = (
+    put_skewt_ctx(message_target.chat.id, msg.message_id, (
         lat, lon, city, current, hourly, probe, time_label, report
-    )
-    _prune_ctx()
+    ))
 
 async def _send_radar(message_target, lat, lon, city, context):
     await message_target.reply_text(f"📡 Загружаю радар для *{md(city)}*...", parse_mode="Markdown")
@@ -611,7 +631,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data.startswith("stn:"):
         mid = query.message.message_id
-        ctx = _skewt_ctx.get((query.message.chat.id, mid))
+        ctx = get_skewt_ctx(query.message.chat.id, mid)
         if not ctx:
             await query.answer("Сессия устарела. Отправь /skewt заново.", show_alert=True)
             return
@@ -791,7 +811,7 @@ def build_application() -> Application:
             }, persistence_file, protocol=pickle.HIGHEST_PROTOCOL)
     except FileExistsError:
         pass
-    persistence = PicklePersistence(filepath=persistence_path)
+    persistence = AtomicPicklePersistence(filepath=persistence_path)
     request_config = HTTPXRequest(read_timeout=30, write_timeout=30, connect_timeout=15, pool_timeout=15)
     
     application = (

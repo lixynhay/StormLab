@@ -1,5 +1,6 @@
 import functools
 import logging
+import threading
 import time
 from config import ADMIN_USER_IDS
 
@@ -32,6 +33,9 @@ _CALLBACK_OPERATIONS = {
 }
 
 _rate_limits = {}
+_lock = threading.RLock()
+_calls_since_prune = 0
+_PRUNE_EVERY = 1000
 
 
 def operation_for_update(update, context) -> str | None:
@@ -61,20 +65,28 @@ def check_rate_limit(user_id: int, operation: str) -> tuple[bool, int]:
     cooldown = COOLDOWNS.get(operation, 60)
     key = (user_id, operation)
     now = time.time()
-    
-    last_request = _rate_limits.get(key, 0)
-    elapsed = now - last_request
-    
-    if elapsed < cooldown:
-        remaining = int(cooldown - elapsed)
-        return False, remaining
-    
-    _rate_limits[key] = now
-    
-    if len(_rate_limits) > 500:
-        _prune_rate_limits()
-    
-    return True, 0
+
+    global _calls_since_prune
+    with _lock:
+        last_request = _rate_limits.get(key, 0)
+        elapsed = now - last_request
+
+        if elapsed < cooldown:
+            remaining = int(cooldown - elapsed)
+            _calls_since_prune += 1
+            if _calls_since_prune >= _PRUNE_EVERY:
+                _calls_since_prune = 0
+                _prune_rate_limits()
+            return False, remaining
+
+        _rate_limits[key] = now
+        _calls_since_prune += 1
+        if _calls_since_prune >= _PRUNE_EVERY:
+            _calls_since_prune = 0
+            _prune_rate_limits()
+        if len(_rate_limits) > 500:
+            _prune_rate_limits()
+        return True, 0
 
 
 def rate_limited(operation: str | None = None, message: str | None = None):
