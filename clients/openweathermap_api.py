@@ -9,6 +9,7 @@ from config import (
     OWM_RETRY_ATTEMPTS,
     OWM_RETRY_DELAY,
 )
+from core.text_safety import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -70,17 +71,17 @@ class OpenWeatherMapAPI:
 
             except requests.exceptions.RequestException as e:
                 last_error = e
-                logger.error(f"OpenWeatherMap API error: {e}")
+                logger.error(f"OpenWeatherMap API error: {redact_secrets(e)}")
                 if attempt < OWM_RETRY_ATTEMPTS:
                     time.sleep(OWM_RETRY_DELAY)
 
             except (ValueError, KeyError) as e:
                 last_error = e
-                logger.error(f"OpenWeatherMap: некорректный ответ: {e}")
+                logger.error(f"OpenWeatherMap: некорректный ответ: {redact_secrets(e)}")
                 break
 
         logger.warning(
-            f"OpenWeatherMap недоступен после {OWM_RETRY_ATTEMPTS} попыток: {last_error}. "
-            f"Продолжаю работу только на Open-Meteo."
+            f"OpenWeatherMap недоступен после {OWM_RETRY_ATTEMPTS} попыток: "
+            f"{redact_secrets(last_error)}. Продолжаю работу только на Open-Meteo."
         )
         return None

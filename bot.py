@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
 from telegram.constants import ParseMode
-from telegram.error import TimedOut, NetworkError
+from telegram.error import TimedOut, NetworkError, Forbidden
 from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler, ContextTypes, JobQueue,
     PicklePersistence,
@@ -24,6 +24,7 @@ from clients.openweathermap_api import OpenWeatherMapAPI
 from clients.data_fusion import fuse_current_weather
 from core.storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
 from core.season_regime import get_regime, interpret
+from core.text_safety import escape_markdown, redact_secrets
 from render.chart_builder import build_profile_chart
 from ai.ai_analysis import generate_storm_analysis
 from render.skewt_builder import build_skewt_chart
@@ -35,7 +36,7 @@ from rate_limiter import rate_limited, check_rate_limit
 from alert_manager import (
     add_alert, remove_alert, get_user_alerts, get_all_alerts,
     can_send_alert, record_alert_sent, check_dangerous_conditions,
-    get_user_location_keys, location_key, group_alerts_by_location,
+    get_user_location_keys, location_key, group_alerts_by_location, prune_history,
 )
 
 setup_logging()
@@ -44,9 +45,7 @@ logger = logging.getLogger(__name__)
 
 def md(text: str) -> str:
     """Экранирование для parse_mode=Markdown (классический V1)."""
-    for ch in ("_", "*", "`", "[", "]"):
-        text = text.replace(ch, "\\" + ch)
-    return text
+    return escape_markdown(text)
 
 
 weather_api = OpenMeteoAPI()
@@ -63,7 +62,7 @@ TIME_OFFSETS = [
 
 def _prune_ctx():
     if len(_skewt_ctx) > 200:
-        keys = sorted(_skewt_ctx.keys())
+        keys = sorted(_skewt_ctx.keys(), key=str)
         for k in keys[:50]:
             _skewt_ctx.pop(k, None)
 
@@ -120,7 +119,7 @@ def _get_fused_current_data(lat, lon, time_index):
         try:
             owm_current = owm_api.get_current(lat, lon)
         except Exception as e:
-            logger.warning(f"OpenWeatherMap недоступен: {e}")
+            logger.warning(f"OpenWeatherMap недоступен: {redact_secrets(e)}")
         fused = fuse_current_weather(om_data["current"], owm_current)
         source_label = "Open-Meteo + OpenWeatherMap" if owm_current else "Open-Meteo"
     else:
@@ -240,7 +239,7 @@ async def _send_storm_report(message_target, lat, lon, city, time_index, time_la
         regime = get_regime(lat, datetime.now(timezone.utc).month)
         report = build_storm_report(current_data, pressure_data, regime=regime)
         timestamp_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
-        text = format_storm_text(report, city, timestamp_str)
+        text = format_storm_text(report, md(city), timestamp_str)
         if report.get("effective_layer") is None:
             text += "\n\neffective layer не найден, показан fixed-layer"
         season_lines = interpret(
@@ -314,13 +313,15 @@ async def _send_skewt(message_target, lat, lon, city, time_index, time_label, co
         return
     
     markup = _build_stations_markup(probe) if probe else None
-    caption = f"📈 Skew-T: модель Open-Meteo ({city}, {time_label})"
+    caption = f"📈 Skew-T: модель Open-Meteo ({md(city)}, {time_label})"
     caption += "\nВыбери реальный зонд 👇" if probe else "."
     
     msg = await message_target.reply_photo(photo=chart, caption=caption, reply_markup=markup, parse_mode="Markdown")
     
     context.user_data["last_skewt_messages"] = [msg.message_id]
-    _skewt_ctx[msg.message_id] = (lat, lon, city, current, hourly, probe, time_label, report)
+    _skewt_ctx[(message_target.chat.id, msg.message_id)] = (
+        lat, lon, city, current, hourly, probe, time_label, report
+    )
     _prune_ctx()
 
 async def _send_radar(message_target, lat, lon, city, context):
@@ -345,7 +346,7 @@ async def _send_radar(message_target, lat, lon, city, context):
             
         time_str = timestamp_utc.strftime("%H:%M UTC")
         cache_note = " (кэш)" if is_cached else ""
-        caption = f"📡 Радар осадков: *{city}*{cache_note}\n🕐 Данные: {time_str}\n📏 Масштаб: ~200x200 км"
+        caption = f"📡 Радар осадков: *{md(city)}*{cache_note}\n🕐 Данные: {time_str}\n📏 Масштаб: ~200x200 км"
         if getattr(radar_image, "no_echo", False):
             caption += "\nОсадков в зоне не обнаружено."
         await message_target.reply_photo(photo=radar_image, caption=caption, parse_mode="Markdown")
@@ -389,10 +390,12 @@ async def _send_ai_analysis(message_target, context):
         )
         return
     
+    # Dynamic LLM text is sent without parse_mode: arbitrary _, *, [, ] in the
+    # response would otherwise cause Telegram BadRequest and lose the answer.
     await message_target.reply_text(
-        f"🤖 *AI-анализ* ({md(city)}, {time_label}):\n\n{analysis}",
-        parse_mode="Markdown"
+        f"🤖 AI-анализ ({city}, {time_label}):",
     )
+    await message_target.reply_text(redact_secrets(analysis))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -608,7 +611,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data.startswith("stn:"):
         mid = query.message.message_id
-        ctx = _skewt_ctx.get(mid)
+        ctx = _skewt_ctx.get((query.message.chat.id, mid))
         if not ctx:
             await query.answer("Сессия устарела. Отправь /skewt заново.", show_alert=True)
             return
@@ -628,6 +631,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         wmo = query.data[4:]
         meta = next((s for s in probe if s["wmo"] == wmo), None)
+        if meta is None:
+            await query.answer("Станция не найдена в этой сессии.", show_alert=True)
+            return
         try:
             df, rt = await asyncio.wait_for(
                 asyncio.to_thread(get_sounding_by_wmo, wmo),
@@ -748,10 +754,27 @@ async def alerts_background_task(context: ContextTypes.DEFAULT_TYPE):
                     parse_mode="Markdown",
                 )
                 record_alert_sent(user_id, city)
+            except Forbidden:
+                # User blocked the bot: drop the dead subscription. Temporary
+                # network errors must NOT remove subscriptions.
+                try:
+                    remove_alert(user_id, city)
+                    logger.info(
+                        f"Subscription removed: user={user_id} blocked bot (city={city})"
+                    )
+                except Exception as e:
+                    logger.error("remove_alert failed: %s", redact_secrets(e))
+                continue
             except Exception as e:
                 logger.warning(f"Alert job failed for {city} (user {user_id}): {e}")
         # Пауза между уникальными локациями, чтобы не упереться в rate-limit внешних API
         await asyncio.sleep(2)
+
+    # Housekeeping: only rows older than 30 days, so the 2-hour cooldown is safe.
+    try:
+        prune_history()
+    except Exception as e:
+        logger.warning(f"Alert job: prune_history failed: {e}")
 
 
 def build_application() -> Application:
