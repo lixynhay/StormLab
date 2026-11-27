@@ -9,8 +9,7 @@ import pytest
 import alert_manager
 import rate_limiter
 from ai.ai_providers import (
-    GeminiProvider, LocalProvider, OpenAICompatProvider, _parse_prompt_data,
-    _rule_based_analysis,
+    GeminiProvider, LocalProvider, OpenAICompatProvider, _rule_based_analysis,
 )
 from clients.openmeteo_api import current_hour_index, resolve_hour_index
 from core.season_regime import get_regime
@@ -179,17 +178,13 @@ def test_skewt_context_includes_season_line():
 
 
 def test_local_provider_is_seasonal():
-    prompt = (
-        "Данные:\nСезонный режим: cool\n"
-        "CAPE (SB): 220 Дж/кг | CIN: 30 Дж/кг | LCL: 900 гПа\n"
-        "K-Index: 25 | Total Totals: 45 | Lifted Index: -2\n"
-        "Сдвиг 0-6 км: 22 м/с | Сдвиг 0-3 км: 12 м/с\n"
-        "SRH: 120 | EHI: 0.1 | BRN: 3\n"
-        "STP: 0.3 | SCP: 1.0 | DCAPE: 600\n"
-    )
-    data = _parse_prompt_data(prompt)
-    assert data["regime"] == "cool"
-    text = _rule_based_analysis(data, "Тест")
+    report = {
+        "cape": 220, "cin": -30, "lcl": 900, "lcl_height_m": 1800,
+        "bulk_shear_06": 22, "srh": 120, "stp": 0.3, "scp": 1.0,
+        "dcape": 600, "k_index": 25, "total_totals": 45,
+        "lifted_index": -2, "regime": "cool",
+    }
+    text = _rule_based_analysis(report, "Тест")
     assert "thundersnow" in text
     assert "торнадо-опасные суперячейки" not in text
 

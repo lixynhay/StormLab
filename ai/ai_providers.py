@@ -2,6 +2,7 @@ import logging
 import time
 
 from config import GEMINI_API_TIMEOUT, LLM_REQUEST_TIMEOUT
+from core.season_regime import thresholds_for
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,8 @@ class BaseProvider:
     def is_available(self) -> bool:
         return False
     
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, **kwargs) -> str:
+        """Default: prompt-only. Structured kwargs are ignored by LLM providers."""
         raise NotImplementedError
 
 
@@ -97,191 +99,208 @@ class GeminiProvider(BaseProvider):
 
 
 class LocalProvider(BaseProvider):
+    """Deterministic fallback: reads the structured report, never scrapes the prompt.
+
+    The old regex scraper produced silent zeros for ``CAPE (SB)``, ``STP
+    (торнадо)``, ``SCP (суперячейки)`` and ``DCAPE (шквалы)`` because ``grab``
+    looked for bare ``KEY:`` labels. Structured fields from ``build_storm_report``
+    are the single source of truth; the prompt is kept only as a compatibility
+    argument for the provider chain.
+    """
+
     name = "Local"
-    
+    accepts_report = True  # call-site signal in ai_analysis.generate_storm_analysis
+
     def is_available(self) -> bool:
         return True
-    
-    def generate(self, prompt: str) -> str:
-        data = _parse_prompt_data(prompt)
-        city = _parse_city(prompt)
-        return _rule_based_analysis(data, city)
 
-
-def _parse_city(prompt: str) -> str:
-    for line in prompt.splitlines():
-        if "для " in line and "." in line:
-            try:
-                return line.split("для ", 1)[1].split(".")[0].strip()
-            except Exception:
-                pass
-    return "города"
-
-
-def _parse_prompt_data(prompt: str) -> dict:
-    import re
-    
-    def grab(key):
-        m = re.search(rf"{key}:\s*([-0-9.]+)", prompt)
-        try:
-            return float(m.group(1)) if m else 0.0
-        except Exception:
-            return 0.0
-    
-    return {
-        "cape": grab("CAPE"),
-        "cape_type": "SB",
-        "cin": grab("CIN"),
-        "lcl": grab("LCL"),
-        "k": grab("K-Index"),
-        "tt": grab("Total Totals"),
-        "li": grab("Lifted Index"),
-        "si": grab("Showalter"),
-        "sweat": grab("SWEAT"),
-        "shear06": grab("Сдвиг 0-6 км"),
-        "shear03": grab("Сдвиг 0-3 км"),
-        "srh": grab("SRH"),
-        "ehi": grab("EHI"),
-        "brn": grab("BRN"),
-        "stp": grab("STP"),
-        "scp": grab("SCP"),
-        "dcape": grab("DCAPE"),
-        "regime": (
-            m.group(1).lower()
-            if (m := re.search(r"Сезонный режим:\s*(cool|warm)", prompt, re.IGNORECASE))
-            else "warm"
-        ),
-    }
-
-
-def _rule_based_analysis(d: dict, city: str) -> str:
-    cape, k, li = d["cape"], d["k"], d["li"]
-    shear06, srh, ehi = d["shear06"], d["srh"], d["ehi"]
-    tt, sweat = d["tt"], d["sweat"]
-    stp, scp, dcape = d["stp"], d["scp"], d["dcape"]
-    regime = d.get("regime", "warm")
-
-    if regime == "cool":
-        if (
-            stp >= 2.0
-            or (scp >= 4.0 and cape >= 1000)
-            or (cape >= 1000 and shear06 >= 18 and srh >= 150)
-        ):
-            conv_type = "мощная зимняя конвекция (thundersnow/snow-squall)"
-            detail = (
-                "в холодном сезоне сочетание нестабильности и сильного сдвига даёт "
-                "thundersnow или snow-squall, а не суперячейки"
+    def generate(self, prompt: str = "", report: dict = None, city: str = None, **kwargs) -> str:
+        if not report:
+            # Noisy fallback: never silently degrade to zeros / warm.
+            logger.warning(
+                "LocalProvider: структурированный report не передан — "
+                "скрейп промпта отключён, анализ выполняется по пустому профилю"
             )
-        elif cape >= 200 and shear06 >= 20:
+            report = {}
+        return _rule_based_analysis(report, city or "города")
+
+
+def _cap(text: str) -> str:
+    """Capitalize the first letter without lowercasing CAPE/STP/SCP acronyms."""
+    return text[:1].upper() + text[1:] if text else text
+
+
+def _num(value) -> float:
+    try:
+        return float(value) if value is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _nd(value, spec: str = ".1f") -> str:
+    """Render an optional number as «н/д» — never coerce missing data to 0.0.
+
+    Effective composites (stp_eff/scp_eff) and dcape legitimately have no value
+    on real profiles; substituting 0 would be a new silent-zero, not a guard.
+    """
+    if value is None:
+        return "н/д"
+    try:
+        return f"{float(value):{spec}}"
+    except (TypeError, ValueError):
+        return "н/д"
+
+
+def _rule_based_analysis(report: dict, city: str) -> str:
+    """Fallback analysis built from the structured report + seasonal thresholds.
+
+    All season-sensitive numbers come from ``season_regime.thresholds_for``;
+    narratives already produced by ``build_storm_report`` (batch 2.3) are reused
+    verbatim. Domain cut-offs that remain here are cited in the batch-2.5/3
+    verification table (SPC help pages; DCAPE > 1000 J/kg).
+    """
+    regime = report.get("regime", "warm")
+    th = thresholds_for(regime)
+
+    cape = _num(report.get("cape"))
+    cin = abs(_num(report.get("cin")))
+    shear06 = _num(report.get("bulk_shear_06"))
+    srh = _num(report.get("srh"))
+    dcape = _num(report.get("dcape"))
+    li = _num(report.get("lifted_index"))
+    k_index = _num(report.get("k_index"))
+    tt = _num(report.get("total_totals"))
+    lcl_height = report.get("lcl_height_m")
+
+    # Raw optional values are kept separately from the guarded float copies:
+    # a missing effective composite must be rendered as «н/д», not as 0.0.
+    dcape_raw = report.get("dcape")
+    stp_eff = report.get("stp_eff")
+    scp_eff = report.get("scp_eff")
+    ehi_raw = report.get("ehi")
+    brn_raw = report.get("brn")
+    sweat_raw = report.get("sweat_index")
+    si_raw = report.get("showalter_index")
+    stp_fixed = report.get("stp")
+    scp_fixed = report.get("scp")
+    lcl_raw = report.get("lcl")
+
+    cape_ok = cape >= th["cape_min"]
+    shear_ok = shear06 >= th["shear06_min"]
+
+    cape_text = report.get("cape_interpretation") or (
+        "конвекция маловероятна" if cape < th["cape_min"] else "нестабильность выше сезонного порога"
+    )
+    cin_text = report.get("cin_interpretation") or (
+        "крышка слабая" if cin <= th["cin_max"] else "крышка сильная"
+    )
+    lcl_text = report.get("lcl_interpretation") or (
+        "н/д" if lcl_height is None else (
+            "низкий LCL" if lcl_height <= th["lcl_max"] else "высокий LCL"
+        )
+    )
+    shear_text = report.get("shear_interpretation") or (
+        "сдвиг ветра" if shear_ok else "сдвиг ниже сезонного порога"
+    )
+    stp_text = report.get("stp_interpretation") or ""
+    scp_text = report.get("scp_interpretation") or ""
+
+    if cape <= 0:
+        conv_type = "конвекция маловероятна"
+        detail = "нет доступной нестабильности (CAPE = 0) — грозы не ожидаются"
+    elif regime == "cool":
+        if cape_ok and shear_ok:
             conv_type = "зимняя конвекция (thundersnow/snow-squall)"
-            detail = "низкий CAPE при сильном сдвиге зимой — прокси thundersnow/snow-squall"
-        elif cape >= 100 or k >= 20:
+            detail = (
+                "CAPE и сдвиг достигли порогов холодного сезона "
+                f"(CAPE ≥ {th['cape_min']}, сдвиг ≥ {th['shear06_min']} м/с) — "
+                "прокси thundersnow/snow-squall, не суперячейки"
+            )
+        elif cape_ok or shear_ok:
             conv_type = "слабая зимняя конвекция / снежные заряды"
-            detail = "условия пограничные: возможны снежные заряды и локальный thundersnow"
+            detail = "только один из сезонных порогов достигнут — возможны снежные заряды"
         else:
             conv_type = "зимняя конвекция маловероятна"
-            detail = "недостаточно нестабильности и сдвига для thundersnow"
-    elif stp >= 2.0:
-        conv_type = "торнадо-опасные суперячейки"
-        detail = "STP ≥ 2.0 указывает на высокий потенциал значительных торнадо (EF1-EF3)"
-    elif scp >= 4.0 and cape >= 1000:
-        conv_type = "суперячейки"
-        detail = "SCP ≥ 4.0 с высоким CAPE создаёт условия для организованных суперячеек"
-    elif cape >= 1000 and shear06 >= 18 and srh >= 150:
-        conv_type = "суперячейки"
-        detail = "сочетание высокой нестабильности, сильного сдвига и заметной спиральности"
-    elif cape >= 800 and shear06 >= 12:
-        conv_type = "мультиячейковые грозы"
-        detail = "достаточная нестабильность при умеренном сдвиге favoreт кластерную организацию"
-    elif cape >= 400 and k >= 25:
-        conv_type = "одиночные ячейки"
-        detail = "нестабильность есть, но сдвига недостаточно для организации"
-    elif cape >= 100 or k >= 20:
+            detail = "ни CAPE, ни сдвиг не достигли порогов холодного сезона"
+    elif cape_ok and shear_ok:
+        conv_type = "организованные грозы (суперячейки/шквалистые линии)"
+        detail = (
+            f"CAPE ≥ {th['cape_min']} Дж/кг и сдвиг ≥ {th['shear06_min']} м/с — "
+            "среда благоприятна для organized convection"
+        )
+    elif cape_ok:
+        conv_type = "одиночные/мультиячейковые грозы"
+        detail = "нестабильность есть, но сдвиг ниже сезонного порога — организация ограничена"
+    else:
         conv_type = "слабая/изолированная конвекция"
-        detail = "условия пограничные, грозы если и будут, то точечные и слабые"
-    else:
-        conv_type = "конвекция маловероятна"
-        detail = "недостаточно ни нестабильности, ни триггеров для развития гроз"
-    
-    if regime == "cool" and 200 <= cape < 1000:
-        instab = "зимняя нестабильность (достаточна для thundersnow при сильном сдвиге)"
-    elif cape >= 2500:
-        instab = "экстремальная нестабильность (CAPE очень высок)"
-    elif cape >= 1000:
-        instab = "сильная нестабильность"
-    elif cape >= 400:
-        instab = "умеренная нестабильность"
-    elif cape >= 100:
-        instab = "слабая нестабильность"
-    else:
-        instab = "атмосфера стабильна"
-    
-    if regime == "cool":
-        if shear06 >= 20:
-            shear_desc = "сдвиг ветра сильный — благоприятен для snow-squall/зимних шквалов"
-        elif shear06 >= 12:
-            shear_desc = "сдвиг умеренный — поддерживает снежные полосы"
-        elif shear06 >= 6:
-            shear_desc = "сдвиг слабый — зимняя конвекция будет разрозненной"
-        else:
-            shear_desc = "сдвиг минимальный — организация маловероятна"
-    elif shear06 >= 20:
-        shear_desc = "сдвиг ветра сильный — благоприятен для суперячеек"
-    elif shear06 >= 12:
-        shear_desc = "сдвиг умеренный — поддерживает мультиячейковые структуры"
-    elif shear06 >= 6:
-        shear_desc = "сдвиг слабый — конвекция будет разрозненной"
-    else:
-        shear_desc = "сдвиг минимальный — организация маловероятна"
-    
+        detail = "CAPE ниже сезонного порога — грозы если и будут, то точечные и слабые"
+
     hazards = []
-    if regime == "cool":
-        if cape >= 200 and shear06 >= 20:
+    if cape > 0:
+        if regime == "cool" and cape_ok and shear_ok:
+            # NWS glossary: snow squall = intense short-duration snow with strong
+            # gusty winds and POSSIBLE lightning. "Thundersnow" is kept as the
+            # project's conventional shorthand (NWS glossary has no such entry).
             hazards.append("❄️ thundersnow / snow-squall")
         if dcape >= 1000:
-            hazards.append("💨 снежный шквал/микропорыв")
-        if cape >= 2500 and shear06 >= 15:
-            hazards.append("🧊 град/ледяные ядра")
-        if not hazards:
-            hazards.append("значимые зимние опасные явления маловероятны")
-    else:
-        if stp >= 1.0:
-            hazards.append("🌪 торнадо")
-        if dcape >= 1000:
-            hazards.append("💨 шквалы/микропорывы")
-        if cape >= 2500 and shear06 >= 15:
-            hazards.append("🧊 град")
-        if not hazards:
-            hazards.append("значимые опасные явления маловероятны")
-    
+            # SPC help/params2.html: DCAPE > 1000 J/kg -> strong downdrafts /
+            # damaging outflow winds.
+            hazards.append(
+                "💨 шквал/микропорыв" if regime == "warm" else "💨 снежный шквал/микропорыв"
+            )
+        if stp_text and "торнадо" in stp_text.lower() and regime == "warm":
+            hazards.append("🌪 торнадо (по STP)")
+        if scp_text and "суперячей" in scp_text.lower() and regime == "warm":
+            hazards.append("⚡ суперячейки (по SCP)")
+    if not hazards:
+        hazards.append(
+            "значимые зимние опасные явления маловероятны" if regime == "cool" or cape <= 0
+            else "значимые опасные явления маловероятны"
+        )
+
     contradictions = []
-    if cape >= 1000 and shear06 < 8:
-        if regime == "cool":
-            contradictions.append("высокий CAPE при слабом сдвиге → зимняя конвекция слабо организована")
-        else:
-            contradictions.append("высокий CAPE при слабом сдвиге → суперячейки маловероятны")
-    if cape < 300 and shear06 >= 18:
-        contradictions.append("сильный сдвиг при низкой нестабильности → мощная конвекция не разовьётся")
-    if stp >= 2.0 and srh < 100:
-        contradictions.append("высокий STP но низкий SRH → возможна переоценка торнадо-потенциала")
-    if k >= 30 and cape < 200:
-        contradictions.append("K-Index высок, но CAPE мал → влага есть, а энергии нет")
-    
-    if contradictions:
-        consistency = "Обнаружены противоречия: " + "; ".join(contradictions) + "."
-    else:
-        consistency = "Индексы согласованы между собой."
-    
+    if cape >= th["cape_min"] and shear06 < th["shear06_min"]:
+        contradictions.append(
+            f"CAPE ≥ {th['cape_min']}, но сдвиг < {th['shear06_min']} м/с — организация слабая"
+        )
+    if shear06 >= th["shear06_min"] and cape < th["cape_min"]:
+        contradictions.append(
+            f"сдвиг ≥ {th['shear06_min']} м/с, но CAPE < {th['cape_min']} — энергии недостаточно"
+        )
+    if cin > th["cin_max"]:
+        contradictions.append(
+            f"CIN {cin:.0f} Дж/кг выше порога {th['cin_max']} — крышка подавит конвекцию"
+        )
+    if lcl_height is not None and lcl_height > th["lcl_max"]:
+        contradictions.append(
+            f"LCL {int(lcl_height)} м выше порога {th['lcl_max']} м — подъём затруднён"
+        )
+    consistency = (
+        "Обнаружены противоречия: " + "; ".join(contradictions) + "."
+        if contradictions
+        else "Индексы согласованы между собой."
+    )
+
     analysis = (
         f"Анализ:\n"
         f"Для {city} наиболее вероятный характер конвекции — {conv_type}. "
-        f"{detail.capitalize()}. По термодинамике: {instab} "
-        f"(CAPE={cape:.0f} Дж/кг, LI={li:.1f}, K={k:.1f}, TT={tt:.1f}). "
-        f"По динамике: {shear_desc} (сдвиг 0-6км={shear06:.1f} м/с, SRH={srh:.0f}). "
+        f"{_cap(detail)}. "
+        f"По термодинамике: {cape_text} "
+        f"(CAPE={cape:.0f} Дж/кг, LI={li:.1f}, K={k_index:.1f}, TT={tt:.1f}); "
+        f"крышка: {cin_text} (CIN={cin:.0f} Дж/кг); подъём: {lcl_text} "
+        f"(LCL={_nd(lcl_raw, '.0f')} гПа, высота="
+        f"{'н/д' if lcl_height is None else str(int(lcl_height))} м). "
+        f"По динамике: {shear_text} (сдвиг 0-6км={shear06:.1f} м/с, SRH={srh:.0f}). "
         f"Опасные явления: {', '.join(hazards)}. "
-        f"Композитные индексы: STP={stp:.1f}, SCP={scp:.1f}, DCAPE={dcape:.0f} Дж/кг."
+        f"Композитные индексы: STP(fixed)={_nd(stp_fixed)}, "
+        f"SCP(fixed)={_nd(scp_fixed)}, "
+        f"STP(effective)={_nd(stp_eff)}, SCP(effective)={_nd(scp_eff)}, "
+        f"EHI={_nd(ehi_raw)}, BRN={_nd(brn_raw)}, "
+        f"DCAPE={_nd(dcape_raw, '.0f')} Дж/кг, "
+        f"SWEAT={_nd(sweat_raw, '.0f')}, SI={_nd(si_raw)}. "
+        f"Сезонный режим: {regime}."
     )
-    
+
     return analysis + "\n\n⚠️ Проверка согласованности:\n" + consistency + \
         "\n\n_Примечание: анализ выполнен локальным алгоритмом (AI-провайдеры временно недоступны)._"
 

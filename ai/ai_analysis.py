@@ -1,5 +1,5 @@
 import logging
-from ai.ai_providers import build_provider_chain
+from ai.ai_providers import build_provider_chain, LocalProvider
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,14 @@ def generate_storm_analysis(report: dict, city: str, skewt_ctx: str) -> str:
         if not provider.is_available():
             continue
         try:
-            result = provider.generate(prompt)
+            # Only LocalProvider consumes structured fields; external providers
+            # keep their prompt-only generate(prompt) signature unchanged.
+            extra = (
+                {"report": report, "city": city}
+                if getattr(provider, "accepts_report", False)
+                else {}
+            )
+            result = provider.generate(prompt, **extra)
             logger.info(f"AI-анализ успешно получен от {provider.name}")
             return result
         except Exception as e:
