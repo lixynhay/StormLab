@@ -18,8 +18,7 @@ def redact_secrets(text) -> str:
         return ""
     value = str(text)
     for pattern in (_SECRET_PARAM_RE, _HEADER_SECRET_RE, _PWD_RE):
-        value = pattern.sub(r"\1=***REDACTED***" if pattern is not _HEADER_SECRET_RE
-                            else r"\1***REDACTED***", value)
+        value = pattern.sub("***REDACTED***", value)
     return value
 
 

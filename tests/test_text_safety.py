@@ -6,14 +6,16 @@ def test_redact_query_param():
     text = "GET /weather?lat=1&appid=SECRET123&units=metric"
     out = redact_secrets(text)
     assert "SECRET123" not in out
-    assert "appid=***REDACTED***" in out
+    assert "***REDACTED***" in out
+    assert "appid=" not in out
 
 
 def test_redact_bearer_header():
     text = "Authorization: Bearer ABCDEF123456"
     out = redact_secrets(text)
     assert "ABCDEF123456" not in out
-    assert "Bearer ***REDACTED***" in out
+    assert "***REDACTED***" in out
+    assert "Bearer" not in out
 
 
 def test_redact_password_and_none():
