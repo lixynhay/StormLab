@@ -5,6 +5,8 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
+from core.locks import get_lock
+
 logger = logging.getLogger(__name__)
 
 RAVIEWER_API_URL = "https://api.rainviewer.com/public/weather-maps.json"
@@ -32,15 +34,16 @@ _cache = {
     "last_valid_time": None,
     "ttl": 300
 }
+_RADAR_LOCK = get_lock("radar_api")
 
 def get_latest_radar_frame(force_check=False):
     now = time.time()
     
-    if not force_check and (now - _cache["last_check"]) < _cache["ttl"]:
-        if _cache["is_valid"]:
-            logger.info(f"RainViewer: используем кэш ({_cache['last_valid_path']})")
-            return _cache["last_valid_path"], _cache["last_valid_time"], True
-        else:
+    with _RADAR_LOCK:
+        if not force_check and (now - _cache["last_check"]) < _cache["ttl"]:
+            if _cache["is_valid"]:
+                logger.info(f"RainViewer: используем кэш ({_cache['last_valid_path']})")
+                return _cache["last_valid_path"], _cache["last_valid_time"], True
             logger.info("RainViewer: кэш показывает недоступность")
             return None, None, True
     
@@ -53,8 +56,9 @@ def get_latest_radar_frame(force_check=False):
         past_frames = data.get("radar", {}).get("past", [])
         if not past_frames:
             logger.error("RainViewer: список past пуст")
-            _cache["is_valid"] = False
-            _cache["last_check"] = now
+            with _RADAR_LOCK:
+                _cache["is_valid"] = False
+                _cache["last_check"] = now
             return None, None, False
 
         host = data.get("host") or TILE_BASE_URL
@@ -64,27 +68,33 @@ def get_latest_radar_frame(force_check=False):
                 timestamp_unix = frame["time"]
                 dt_utc = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc)
                 
-                _cache["is_valid"] = True
-                _cache["last_valid_path"] = path
-                _cache["last_valid_time"] = dt_utc
-                _cache["last_check"] = now
+                with _RADAR_LOCK:
+                    _cache["is_valid"] = True
+                    _cache["last_valid_path"] = path
+                    _cache["last_valid_time"] = dt_utc
+                    _cache["last_check"] = now
                 
                 logger.info(f"RainViewer: найден валидный фрейм {path}")
                 return path, dt_utc, False
         
         logger.warning("RainViewer: нет валидных фреймов (host/path не прошли allowlist)")
-        _cache["is_valid"] = False
-        _cache["last_check"] = now
+        with _RADAR_LOCK:
+            _cache["is_valid"] = False
+            _cache["last_check"] = now
         return None, None, False
 
     except Exception as e:
         logger.error(f"Ошибка RainViewer API: {e}", exc_info=True)
-        _cache["is_valid"] = False
-        _cache["last_check"] = now
+        with _RADAR_LOCK:
+            _cache["is_valid"] = False
+            _cache["last_check"] = now
         return None, None, False
 
 def is_radar_available():
     now = time.time()
-    if (now - _cache["last_check"]) >= _cache["ttl"]:
+    with _RADAR_LOCK:
+        expired = (now - _cache["last_check"]) >= _cache["ttl"]
+    if expired:
         get_latest_radar_frame()
-    return _cache["is_valid"]
+    with _RADAR_LOCK:
+        return _cache["is_valid"]

@@ -6,7 +6,8 @@ data/*.db
 data/persistence.pkl
 charts_audit_out/
 venv/
-
 bot.log
 graphify-out/
 venv/
+.mcp.json
+.claude/

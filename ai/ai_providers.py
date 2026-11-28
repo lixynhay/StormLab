@@ -254,7 +254,7 @@ def _rule_based_analysis(report: dict, city: str) -> str:
             hazards.append("⚡ суперячейки (по SCP)")
     if not hazards:
         hazards.append(
-            "значимые зимние опасные явления маловероятны" if regime == "cool" or cape <= 0
+            "значимые зимние опасные явления маловероятны" if regime == "cool"
             else "значимые опасные явления маловероятны"
         )
 

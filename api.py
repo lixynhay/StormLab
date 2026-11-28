@@ -15,11 +15,12 @@ from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
 from config import API_ACCESS_KEY, API_HOST, API_TIMEOUT
-from clients.openmeteo_api import OpenMeteoAPI
+from clients.openmeteo_api import OpenMeteoAPI, resolve_hour_index
 from clients.openweathermap_api import OpenWeatherMapAPI
 from clients.data_fusion import fuse_current_weather
 from core.storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
 from core.season_regime import get_regime
+from core.text_safety import redact_secrets
 from render.chart_builder import build_profile_chart
 from render.skewt_builder import build_skewt_chart
 from clients.geocoding import resolve_city
@@ -34,6 +35,14 @@ weather_api = OpenMeteoAPI()
 owm_api = OpenWeatherMapAPI()
 
 MIN_API_KEY_LENGTH = 16
+
+# REST button index -> offset hours (mirrors /api/time-offsets and bot.TIME_OFFSETS).
+_TIME_OFFSET_HOURS = (0, 3, 6, 12, 24)
+
+
+def _utc_now():
+    """Injectable clock so TestClient can freeze 'now' for time-index tests."""
+    return datetime.now(timezone.utc)
 
 
 def _require_strong_api_key():
@@ -146,7 +155,7 @@ class AIAnalysisRequest(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lon: float = Field(ge=-180, le=180)
     city: str = Field(min_length=1, max_length=100)
-    time_index: int = Field(default=0, ge=0, le=4)
+    time_index: int = Field(default=0, ge=0, le=len(_TIME_OFFSET_HOURS) - 1)
 
 class AIAnalysisResponse(BaseModel):
     city: str
@@ -166,10 +175,25 @@ def _get_fused_data(lat: float, lon: float, time_index: int):
     pressure_data_raw = weather_api.get_pressure_levels(lat, lon)
     hourly_full = pressure_data_raw.get("hourly", {})
 
+    # time_index is a button index (0..4), not a raw array slot: hourly.time
+    # starts at 00:00 UTC. Use the same base+offset logic as bot.py.
+    try:
+        offset_hours = _TIME_OFFSET_HOURS[time_index]
+    except IndexError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"time_index must be in 0..{len(_TIME_OFFSET_HOURS) - 1}",
+        )
+    slot = resolve_hour_index(
+        hourly_full.get("time", []), offset_hours, now=_utc_now()
+    )
+    if slot is None:
+        slot = max(0, len(hourly_full.get("time", [])) - 1)
+
     sliced_hourly = {}
     for key, values in hourly_full.items():
-        if isinstance(values, list) and len(values) > time_index:
-            val = values[time_index]
+        if isinstance(values, list) and len(values) > slot:
+            val = values[slot]
             sliced_hourly[key] = [val] if val is not None else [None]
         else:
             sliced_hourly[key] = values
@@ -184,7 +208,7 @@ def _get_fused_data(lat: float, lon: float, time_index: int):
         try:
             owm_current = owm_api.get_current(lat, lon)
         except Exception as e:
-            logger.warning(f"OpenWeatherMap недоступен: {e}")
+            logger.warning(f"OpenWeatherMap недоступен: {redact_secrets(e)}")
         fused = fuse_current_weather(om_data["current"], owm_current)
         source_label = "Open-Meteo + OpenWeatherMap" if owm_current else "Open-Meteo"
     else:
@@ -223,7 +247,7 @@ async def get_storm_report(
     lat: float = Query(..., ge=-90, le=90, description="Широта"),
     lon: float = Query(..., ge=-180, le=180, description="Долгота"),
     city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города"),
-    time_index: int = Query(0, ge=0, le=4, description="Индекс времени (0=сейчас, 1=+3ч, 2=+6ч, 3=+12ч, 4=+24ч)")
+    time_index: int = Query(0, ge=0, le=len(_TIME_OFFSET_HOURS) - 1, description="Индекс времени (0=сейчас, 1=+3ч, 2=+6ч, 3=+12ч, 4=+24ч)")
 ):
     try:
         current_data, pressure_data, source_label, regime = _get_fused_data(lat, lon, time_index)
@@ -249,7 +273,7 @@ def get_profile_chart(
     lat: float = Query(..., ge=-90, le=90, description="Широта"),
     lon: float = Query(..., ge=-180, le=180, description="Долгота"),
     city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города"),
-    time_index: int = Query(0, ge=0, le=4, description="Индекс времени")
+    time_index: int = Query(0, ge=0, le=len(_TIME_OFFSET_HOURS) - 1, description="Индекс времени")
 ):
     try:
         _, pressure_data, _, regime = _get_fused_data(lat, lon, time_index)
@@ -270,7 +294,7 @@ def get_skewt_chart(
     lat: float = Query(..., ge=-90, le=90, description="Широта"),
     lon: float = Query(..., ge=-180, le=180, description="Долгота"),
     city: str = Query("Неизвестно", min_length=1, max_length=100, description="Название города"),
-    time_index: int = Query(0, ge=0, le=4, description="Индекс времени")
+    time_index: int = Query(0, ge=0, le=len(_TIME_OFFSET_HOURS) - 1, description="Индекс времени")
 ):
     try:
         current_data, pressure_data, _, regime = _get_fused_data(lat, lon, time_index)
