@@ -5,10 +5,11 @@ from core.locks import get_lock
 
 logger = logging.getLogger(__name__)
 
+# Bounded LRU cache (500 entries) guarded by _GEO_LOCK.
 _GEO_CACHE = {}
 _GEO_LOCK = get_lock("geocoding")
 _GEO_URL = "https://geocoding-api.open-meteo.com/v1/search"
-
+_GEO_CACHE_MAX = 500
 
 def resolve_city(query: str):
     if not query:
@@ -47,9 +48,15 @@ def resolve_city(query: str):
 
         result = (lat, lon, display_name)
         with _GEO_LOCK:
+            # Double-check: another thread may have resolved the same city
+            # while the HTTP request was in flight.
             current = _GEO_CACHE.get(key)
             if current is not None:
                 return current
+            # LRU eviction: remove oldest entry when over max.
+            if len(_GEO_CACHE) >= _GEO_CACHE_MAX:
+                first_key = next(iter(_GEO_CACHE))
+                _GEO_CACHE.pop(first_key)
             _GEO_CACHE[key] = result
         logger.info(f"Geo resolved: {query} -> {display_name} ({lat}, {lon})")
         return result

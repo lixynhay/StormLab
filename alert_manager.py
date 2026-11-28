@@ -278,7 +278,7 @@ def check_dangerous_conditions(report: Dict, regime: str = "warm") -> Optional[s
                 return f"❄️ Высокий риск зимней конвекции (thundersnow/snow-squall): {reason_text}"
             return f"⚠️ Высокий риск организованных гроз: {reason_text}"
 
-        if cape >= 2000 and shear_06 >= 20:
+        if cape >= thresholds["cape_min"] and shear_06 >= thresholds["shear06_min"]:
             if regime == "cool":
                 return (
                     f"❄️ Высокий риск thundersnow / snow-squall: "

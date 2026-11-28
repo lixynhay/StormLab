@@ -249,7 +249,7 @@ def interpret_brn(brn):
     else:
         return "🟡 Слабый сдвиг относительно CAPE (мультиячейковые грозы)"
 
-def calculate_stp(cape, srh, lcl_height_m, shear_06, cin=None):
+def calculate_stp(sb_cape, srh_0_1, sb_lcl_height_m, shear_06, cin=None):
     """Fixed-layer STP per SPC (no CIN term).
 
     SPC: "STP = (sbCAPE / 1500 J kg-1) * ((2000 - sbLCL) / 1000 m) *
@@ -262,22 +262,25 @@ def calculate_stp(cape, srh, lcl_height_m, shear_06, cin=None):
     ignored: the SPC fixed-layer formula has no CIN term.
     """
     try:
-        if cape is None or srh is None or shear_06 is None:
+        if sb_cape is None or srh_0_1 is None or shear_06 is None:
             return None
-        if cape <= 0 or shear_06 <= 0:
+        if sb_cape <= 0 or shear_06 <= 0:
             return 0.0
         # SPC: "the 6BWD term ... set to 0.0 for 6BWD < 12.5 m s-1"
         if shear_06 < 12.5:
             return 0.0
 
-        cape_term = max(0.0, cape / 1500.0)
+        cape_term = max(0.0, sb_cape / 1500.0)
 
-        if lcl_height_m is None:
+        # SPC: "sbLCL term is set to 1.0 for sbLCL heights < 1000 m AGL"
+        if sb_lcl_height_m is None:
+            lcl_term = 1.0
+        elif sb_lcl_height_m < 1000:
             lcl_term = 1.0
         else:
-            lcl_term = max(0.0, min(1.0, (2000.0 - lcl_height_m) / 1000.0))
+            lcl_term = max(0.0, min(1.0, (2000.0 - sb_lcl_height_m) / 1000.0))
 
-        srh_term = max(0.0, srh / 150.0)
+        srh_term = max(0.0, srh_0_1 / 150.0)
         # SPC: "the 6BWD term is capped at 1.5 for 6BWD > 30 m s-1"
         shear_term = min(shear_06, 30.0) / 20.0
 
