@@ -26,6 +26,7 @@ from clients.data_fusion import fuse_current_weather
 from core.storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
 from core.season_regime import get_regime, interpret
 from core.text_safety import escape_markdown, redact_secrets
+from core.async_helpers import run_sync
 from render.chart_builder import build_profile_chart
 from ai.ai_analysis import generate_storm_analysis
 from render.skewt_builder import build_skewt_chart
@@ -253,7 +254,7 @@ async def _send_storm_report(message_target, lat, lon, city, time_index, time_la
     
     try:
         regime = get_regime(lat, datetime.now(timezone.utc).month)
-        report = build_storm_report(current_data, pressure_data, regime=regime)
+        report = await run_sync(build_storm_report, current_data, pressure_data, regime=regime)
         timestamp_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
         text = format_storm_text(report, md(city), timestamp_str)
         if report.get("effective_layer") is None:
@@ -306,7 +307,7 @@ async def _send_skewt(message_target, lat, lon, city, time_index, time_label, co
     
     try:
         regime = get_regime(lat, datetime.now(timezone.utc).month)
-        report = build_storm_report(current_data, pressure_data, regime=regime)
+        report = await run_sync(build_storm_report, current_data, pressure_data, regime=regime)
     except Exception as e:
         logger.warning(f"Storm report failed in skewt: {e}")
         report = None
@@ -385,7 +386,7 @@ async def _send_ai_analysis(message_target, context):
         try:
             current_data, pressure_data, _ = await asyncio.to_thread(_get_fused_current_data, lat, lon, 0)
             regime = get_regime(lat, datetime.now(timezone.utc).month)
-            report = build_storm_report(current_data, pressure_data, regime=regime)
+            report = await run_sync(build_storm_report, current_data, pressure_data, regime=regime)
         except Exception as e:
             logger.error(f"AI analysis data fetch failed: {e}")
             await message_target.reply_text("❌ Не удалось получить данные для анализа.")
@@ -561,8 +562,8 @@ async def _alerts_list_text(alerts) -> str:
                 current_data = {"current": om_data["current"]}
                 pressure_data_dict = {"hourly": pressure_data_raw.get("hourly", {})}
                 regime = get_regime(lat, datetime.now(timezone.utc).month)
-                report = build_storm_report(
-                    current_data, pressure_data_dict, regime=regime
+                report = await run_sync(
+                    build_storm_report, current_data, pressure_data_dict, regime=regime
                 )
                 t = report.get("threat_level", 0) or 0
                 threat = ["\u26aa", "\U0001f7e2", "\U0001f7e1", "\U0001f7e0", "\U0001f534", "\u26ab"][min(t, 5)]
@@ -742,7 +743,7 @@ async def alerts_background_task(context: ContextTypes.DEFAULT_TYPE):
                 timeout=IO_TIMEOUT,
             )
             regime = get_regime(lat, datetime.now(timezone.utc).month)
-            report = build_storm_report(current_data, pressure_data, regime=regime)
+            report = await run_sync(build_storm_report, current_data, pressure_data, regime=regime)
             danger = check_dangerous_conditions(report, regime=regime)
         except asyncio.TimeoutError:
             logger.warning(f"Alert job: данные не получены за {IO_TIMEOUT} с для ({lat}, {lon})")
