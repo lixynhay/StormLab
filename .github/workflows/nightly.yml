@@ -1,0 +1,53 @@
+name: Nightly (advisory)
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nightly:
+    name: hypothesis-nightly + full advisory sweep
+    runs-on: ubuntu-latest
+    env:
+      HYPOTHESIS_PROFILE: nightly
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Create uv environment and install dependencies
+        run: |
+          uv venv --python 3.12
+          uv pip install --no-build -r requirements.txt -r requirements-dev.txt
+
+      # Advisory by design: this workflow is reconnaissance, not a merge gate.
+      - name: Full test suite under xdist (1000 Hypothesis examples)
+        run: uv run pytest -q -n auto --cov=stormlab --cov-report=json:coverage-nightly.json --cov-report=term
+      - name: Bandit full report (including low)
+        run: uv run bandit -r stormlab -f json -o bandit-nightly.json
+      - name: Vulture full sweep (confidence 60)
+        run: uv run vulture stormlab --min-confidence 60 > vulture-nightly.txt
+      - name: pip-audit
+        run: uv run pip-audit --format json > pip-audit-nightly.json
+
+      - name: Upload nightly reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-reports
+          path: |
+            coverage-nightly.json
+            .hypothesis/examples
+            bandit-nightly.json
+            vulture-nightly.txt
+            pip-audit-nightly.json
+          if-no-files-found: ignore
