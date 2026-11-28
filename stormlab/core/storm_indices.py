@@ -24,7 +24,12 @@ def _nd_render(value, missing="н/д"):
     Never literal «None», never 0.0 as a stand-in for missing data. Real zeros
     are rendered as numbers (``0.0``), preserving fixed-field semantics.
     """
-    return missing if value is None else str(value)
+    if value is None:
+        return missing
+    # Sparse model grids can yield NaN/inf; they are missing data, not numbers.
+    if isinstance(value, (float, np.floating)) and not np.isfinite(value):
+        return missing
+    return str(value)
 
 
 def _as_float(value):
