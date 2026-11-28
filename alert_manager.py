@@ -34,8 +34,6 @@ ALERT_COOLDOWN_HOURS = 2
 # core.storm_indices.calculate_threat_level and is 150, NOT 100. Different
 # mechanism (score point), intentionally a different constant.
 CAPE_FLOOR = {"warm": 250, "cool": 100}
-# Backward-compatible warm floor name (REST / self-check default regime).
-CAPE_GATE = CAPE_FLOOR["warm"]
 
 
 @contextmanager

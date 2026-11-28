@@ -12,12 +12,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ACCESS_KEY = os.getenv("API_ACCESS_KEY")
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 
-DEFAULT_CITY = "Екатеринбург"
 DEFAULT_LAT = 56.8333
 DEFAULT_LON = 60.5833
-
-SOUNDING_STATION_ID = "28440"
-SOUNDING_STATION_NAME = "Екатеринбург (Кольцово)"
 
 API_TIMEOUT = 10
 API_RETRY_ATTEMPTS = 3
@@ -35,8 +31,6 @@ RESTART_DELAY_SECONDS = 5
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_API_TIMEOUT = 30
-GEMINI_RETRY_ATTEMPTS = 2
-GEMINI_RETRY_DELAY = 3
 
 # Лимит подписок на пользователя (уникальные координаты, округлённые до 0.01°).
 MAX_ALERTS_PER_USER = int(os.getenv("MAX_ALERTS_PER_USER", "5"))
@@ -63,24 +57,6 @@ LOG_FILE = "bot.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 МБ
 LOG_BACKUP_COUNT = 3
 
-FUSION_SIGMA = {
-    "temperature_2m": {"openmeteo": 1.0, "openweathermap": 1.0},
-    "apparent_temperature": {"openmeteo": 1.0, "openweathermap": 1.0},
-    "relative_humidity_2m": {"openmeteo": 5.0, "openweathermap": 5.0},
-    "dew_point_2m": {"openmeteo": 1.0, "openweathermap": 1.5},
-    "surface_pressure": {"openmeteo": 1.0, "openweathermap": 1.0},
-    "cloud_cover": {"openmeteo": 10.0, "openweathermap": 10.0},
-    "precipitation": {"openmeteo": 0.5, "openweathermap": 0.5},
-    "wind_speed_10m": {"openmeteo": 1.0, "openweathermap": 1.0},
-}
-
-FUSION_DIVERGENCE_WARN_THRESHOLD = {
-    "temperature_2m": 5.0,  # °C
-    "surface_pressure": 5.0,  # гПа
-    "wind_speed_10m": 5.0,  # м/с
-}
-
-RADAR_COOLDOWN = 300
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
