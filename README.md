@@ -82,7 +82,7 @@
 - **Хранение**: `SQLite` (стандартная библиотека `sqlite3`)
 - **API**: Open-Meteo (основной источник), OpenWeatherMap (фьюжн приземных данных), RainViewer (радар)
 - **AI**: цепочка fallback Groq (llama-3.3-70b) → GitHub Models (gpt-4o-mini) → Gemini → OpenRouter → LocalProvider (rule-based анализ без внешних API)
-- **Логирование**: `colorlog` + ротационный файл `bot.log` (5 МБ × 3 бэкапа)
+- **Логирование**: стандартный `logging` + ротационный файл `bot.log` (5 МБ × 3 бэкапа)
 - **REST API**: `api.py` на FastAPI + Uvicorn (`fastapi`, `uvicorn` включены в `requirements.txt`)
 
 ---
@@ -148,7 +148,7 @@ python api.py   # uvicorn, порт 8000, хост из переменной API
 ```bash
 python -m pytest -q
 ```
-Набор включает REST auth и REST-путь через `TestClient`, сезонный режим, алерты и подписки, LocalProvider (структурированный report, None-guard), effective-layer, формулы `storm_indices` и RainViewer tile/stub обработку.
+Набор включает REST auth и REST-путь через `TestClient`, сезонный режим, алерты и подписки, LocalProvider (структурированный report, None-guard), effective-layer, формулы `storm_indices` и RainViewer tile/stub обработку. Текущий результат: **155 passed, 3 skipped**, покрытие **73.1 %** (`python -m pytest --cov=. --cov-report=term`).
 
 ---
 
@@ -187,7 +187,11 @@ StormLab/
  │   ├── AUDIT.md              # Технический аудит
  │   ├── CHARTS_AUDIT.md       # Аудит chart/render систем
  │   ├── DEAD_CODE.md          # Импортёры и inventory модулей
+ │   ├── DEAD_CODE_REPORT.md   # Инвентарь findings и результаты очистки
+ │   ├── CONCURRENCY.md        # Матрица глобалов/локов, предусловия Batch 4
+ │   ├── PERSISTENCE.md        # Дизайн замены pickle (Batch 4)
  │   └── VERIFICATION.md       # Результаты проверок
+ ├── PLAN.md                   # План удаления мёртвого кода (батчи A–E)
  ├── tests/
  │   ├── test_api_auth.py      # REST auth/docs/health/rate-limit
  │   ├── test_effective_layer.py
@@ -236,6 +240,12 @@ StormLab/
 
 ## 📝 История изменений (changelog)
 
+### 2026-11-28 — приёмка 3A/3B и Dead Code Elimination
+- **3A**: защита REST (`time_index` → 422, `slot is None`), redaction секретов в логах/AI-тексте, escape только динамики, изоляция Skew-T-контекста по `(chat_id, message_id)`, обработка `Forbidden` без удаления подписок по другим ошибкам.
+- **3B**: именованные/keyed локи для кэшей, ограниченный LRU-контекст, блокировки rate-limiter, атомарная запись persistence (temp + `fsync` + `os.replace`). `concurrent_updates(False)` сохранён; включение обсуждается отдельно (`docs/CONCURRENCY.md`).
+- **Dead Code**: удалены неиспользуемые импорты/константы/функции, legacy `verify_batch1.py`, плагин `.opencode/plugins/graphify.js`, мусорные файлы и 4 зависимости (`groq`, `colorlog`, `Cartopy`, `scipy` — последний приходит транзитивно через MetPy). Подробности — `docs/DEAD_CODE_REPORT.md` и `PLAN.md`.
+- **Метрики**: 155 passed / 3 skipped, покрытие 71.4 % → 73.1 %, граф 761 → 747 узлов. Чистая установка `requirements.txt` и импорт `bot`/`api` проверены.
+
 ### 2026-11-26 — SPC formula corrections (read-only audit → applied)
 - **Fixed-layer STP (`calculate_stp`)**: приведен в точное соответствие SPC (Thompson et al., begin.html): используется sbCAPE, sbLCL, SRH 0–1 км, 6BWD; CIN-член удалён (SPC fixed-STP не содержит CIN); 6BWD < 12.5 м/с → 0, > 30 м/с → cap 1.5.
 - **Fixed-layer SCP**: переименована в `scp_fixed_local`, docstring: «не SPC» — первоисточник (help_scp.html, begin.html) определяет SCP только через effective-layer ингредиенты (muCAPE, ESRH, EBWD).
@@ -254,7 +264,7 @@ StormLab/
 - Высоты рассчитываются из стандартной атмосферы, а не из реальных данных (ограничение модельных API).
 - Радар RainViewer иногда недоступен во время глобальных обновлений их серверов.
 - AI-анализ зависит от доступности и квот внешних API (автоматически переключается на fallback-провайдеров вплоть до локального анализа).
-- Автоматические тесты покрывают REST auth и REST-путь через `TestClient` (включая сезон в `/api/storm` и `/api/ai-analysis`), сезонный режим, логику алертов (включая зимний CAPE 200–250), подписки/лимиты, effective-layer, формулы `storm_indices`, LocalProvider (структурированный report, None-guard, regime-зависимые hazards), Radar API и tile/stub detection. Покрытие: `tests/test_batch2.py`, `tests/test_batch2_5.py`, `tests/test_local_provider.py` и базовые тесты. Планировщик (`JobQueue`) и реальная Telegram-доставка проверяются живьём оператором, unit-покрытие здесь частичное. `prune_history()` определён в `alert_manager.py`, но автоматически не вызывается; `_self_check()` тоже не запускается автоматически.
+- Автоматические тесты покрывают REST auth и REST-путь через `TestClient` (включая сезон в `/api/storm` и `/api/ai-analysis`), сезонный режим, логику алертов (включая зимний CAPE 200–250), подписки/лимиты, effective-layer, формулы `storm_indices`, LocalProvider (структурированный report, None-guard, regime-зависимые hazards), Radar API и tile/stub detection. Покрытие: `tests/test_batch2.py`, `tests/test_batch2_5.py`, `tests/test_local_provider.py` и базовые тесты. Планировщик (`JobQueue`) и реальная Telegram-доставка проверяются живьём оператором, unit-покрытие здесь частичное. `prune_history()` определён в `alert_manager.py`, но автоматически не вызывается; `_self_check()` удалён как мёртвый код. Покрытие кода — 73.1 %.
 - **Три разных CAPE-числа — не опечатка:** floor алерта (`CAPE_FLOOR`, early exit «есть ли конвекция вообще») = warm 250 / cool 100; порог алерта (`cape_min`, одно из ≥3 условий) = warm 1000 / cool 200; первый балл угрозы в отчёте (`calculate_threat_level`) = warm 250 / cool 150. Балл угрозы не является gate для алерта.
 - REST `/api/storm`, `/api/chart/skewt` и `/api/ai-analysis` теперь передают сезон, вычисленный из широты и месяца UTC (раньше был silent-warm). Южное полушарие инвертирует месяцы, границы 45°/55° — эвристика, не физическая модель.
 - **Дисклеймер**: Расчёт по доступному модельному профилю. Не заменяет официальный прогноз метеослужб.
