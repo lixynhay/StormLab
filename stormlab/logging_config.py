@@ -2,6 +2,7 @@ import logging
 import os
 import sqlite3
 import subprocess
+from stormlab.paths import PROJECT_ROOT
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -47,7 +48,7 @@ def setup_logging() -> None:
         console_handler.addFilter(notice_filter)
         root_logger.addHandler(console_handler)
 
-    from config import LOG_BACKUP_COUNT, LOG_FILE, LOG_MAX_BYTES
+    from stormlab.config import LOG_BACKUP_COUNT, LOG_FILE, LOG_MAX_BYTES
 
     log_dir = os.path.dirname(LOG_FILE)
     if log_dir:
@@ -83,7 +84,7 @@ def _repository_version() -> str:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=Path(__file__).resolve().parent,
+            cwd=PROJECT_ROOT,
             check=True,
             capture_output=True,
             text=True,

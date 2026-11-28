@@ -1,5 +1,5 @@
 """Text-safety helpers: secret redaction + legacy Markdown escaping."""
-from core.text_safety import escape_markdown, redact_secrets
+from stormlab.core.text_safety import escape_markdown, redact_secrets
 
 
 def test_redact_query_param():

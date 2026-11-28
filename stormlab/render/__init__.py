@@ -1,0 +1,1 @@
+"""Chart and radar rendering."""

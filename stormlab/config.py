@@ -1,5 +1,7 @@
 import os
 
+from stormlab.paths import LOGS_DIR
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -53,7 +55,7 @@ if not OPENWEATHERMAP_API_KEY:
         "используется только Open-Meteo."
     )
 
-LOG_FILE = "bot.log"
+LOG_FILE = str(LOGS_DIR / "bot.log")
 LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 МБ
 LOG_BACKUP_COUNT = 3
 

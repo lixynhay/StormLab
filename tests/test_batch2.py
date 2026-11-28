@@ -6,14 +6,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-import alert_manager
-import rate_limiter
-from ai.ai_providers import (
+import stormlab.alert_manager as alert_manager
+import stormlab.rate_limiter as rate_limiter
+from stormlab.ai.ai_providers import (
     GeminiProvider, OpenAICompatProvider, _rule_based_analysis,
 )
-from clients.openmeteo_api import current_hour_index, resolve_hour_index
-from core.season_regime import get_regime
-from core.storm_indices import (
+from stormlab.clients.openmeteo_api import current_hour_index, resolve_hour_index
+from stormlab.core.season_regime import get_regime
+from stormlab.core.storm_indices import (
     build_skewt_context_for_ai,
     build_thermal_profile,
     interpret_cape,
@@ -42,7 +42,7 @@ def test_hourly_index_clamps_and_handles_empty():
 
 
 def test_pressure_levels_requests_surface_vars_and_two_days(monkeypatch):
-    from clients.openmeteo_api import OpenMeteoAPI
+    from stormlab.clients.openmeteo_api import OpenMeteoAPI
 
     client = OpenMeteoAPI()
     captured = {}
@@ -79,7 +79,7 @@ def test_thermal_profile_drops_underground_1000_hpa():
 
 
 def test_fused_forecast_uses_button_hours_and_sliced_surface(monkeypatch):
-    import bot
+    import stormlab.bot as bot
 
     times = [f"2026-11-27T{h:02d}:00" for h in range(48)]
     hourly = {"time": times}
@@ -272,7 +272,7 @@ def test_alert_subscription_limit_enforced(tmp_path, monkeypatch):
 # ---------------------------------------------------------------- 6a timeouts
 
 def test_openai_provider_sets_explicit_timeout_and_no_retries(monkeypatch):
-    from config import LLM_REQUEST_TIMEOUT
+    from stormlab.config import LLM_REQUEST_TIMEOUT
 
     class FakeOpenAI:
         def __init__(self, **kwargs):

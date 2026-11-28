@@ -1,7 +1,7 @@
 import logging
 
-from config import GEMINI_API_TIMEOUT, LLM_REQUEST_TIMEOUT
-from core.season_regime import thresholds_for
+from stormlab.config import GEMINI_API_TIMEOUT, LLM_REQUEST_TIMEOUT
+from stormlab.core.season_regime import thresholds_for
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +305,7 @@ def _rule_based_analysis(report: dict, city: str) -> str:
 
 
 def build_provider_chain():
-    from config import (
+    from stormlab.config import (
         GEMINI_API_KEY, GEMINI_MODEL,
         GROQ_API_KEY, OPENROUTER_API_KEY, GITHUB_TOKEN,
     )

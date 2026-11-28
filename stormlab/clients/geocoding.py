@@ -1,7 +1,7 @@
 import logging
 import requests
-from config import API_TIMEOUT
-from core.locks import get_lock
+from stormlab.config import API_TIMEOUT
+from stormlab.core.locks import get_lock
 
 logger = logging.getLogger(__name__)
 

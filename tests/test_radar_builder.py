@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from render import radar_builder
-from render.radar_builder import _is_stub_tile, build_radar_image
+from stormlab.render import radar_builder
+from stormlab.render.radar_builder import _is_stub_tile, build_radar_image
 from tests.cities import BERLIN, MOSCOW, OKC
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"

@@ -1,6 +1,6 @@
 """Discriminating pin: fixed-layer STP must use surface-based LCL, not report LCL."""
 
-from core import storm_indices as si
+from stormlab.core import storm_indices as si
 from tests.test_storm_indices_core import _wind_inputs
 
 

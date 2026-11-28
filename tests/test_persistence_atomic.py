@@ -5,7 +5,7 @@ import pytest
 from telegram.ext import PersistenceInput
 from telegram.ext._picklepersistence import _BotUnpickler
 
-from persistence import AtomicPicklePersistence
+from stormlab.persistence import AtomicPicklePersistence
 
 
 def _persistence(tmp_path):
@@ -41,11 +41,11 @@ def test_interrupted_write_keeps_previous_file(tmp_path, monkeypatch):
     def failing_replace(src, dst):
         raise OSError("simulated interruption")
 
-    monkeypatch.setattr("persistence.os.replace", failing_replace)
+    monkeypatch.setattr("stormlab.persistence.os.replace", failing_replace)
     p.bot_data = {"ready": False}
     with pytest.raises(OSError):
         p._dump_singlefile()
 
     assert (tmp_path / "persistence.pkl").read_bytes() == original
     assert not list(tmp_path.glob(".persist_*"))
-    monkeypatch.setattr("persistence.os.replace", real_replace)
+    monkeypatch.setattr("stormlab.persistence.os.replace", real_replace)

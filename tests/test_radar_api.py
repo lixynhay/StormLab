@@ -1,6 +1,6 @@
 import pytest
 
-from clients import radar_api
+from stormlab.clients import radar_api
 
 VALID_PATH = "/v2/radar/237cea37e45b"
 VALID_HOST = "https://tilecache.rainviewer.com"

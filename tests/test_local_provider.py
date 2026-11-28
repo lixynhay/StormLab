@@ -3,10 +3,10 @@ import inspect
 import re
 from pathlib import Path
 
-import ai.ai_analysis as ai_analysis
-from ai.ai_providers import LocalProvider, OpenAICompatProvider, _rule_based_analysis
-from core.season_regime import thresholds_for
-from core.storm_indices import build_skewt_context_for_ai, format_storm_text
+import stormlab.ai.ai_analysis as ai_analysis
+from stormlab.ai.ai_providers import LocalProvider, OpenAICompatProvider, _rule_based_analysis
+from stormlab.core.season_regime import thresholds_for
+from stormlab.core.storm_indices import build_skewt_context_for_ai, format_storm_text
 
 
 def _cool_report():
@@ -105,7 +105,7 @@ def test_external_providers_keep_prompt_only_signature():
 
 
 def test_no_scraper_helpers_left():
-    module_source = Path("ai/ai_providers.py").read_text(encoding="utf-8")
+    module_source = Path("stormlab/ai/ai_providers.py").read_text(encoding="utf-8")
     assert "_parse_prompt_data" not in module_source
     assert "_parse_city" not in module_source
     assert "re.search" not in module_source

@@ -7,8 +7,8 @@ import time
 import httpx
 import pytest
 
-import api
-from core.async_helpers import run_sync
+import stormlab.api as api
+from stormlab.core.async_helpers import run_sync
 
 pytestmark = pytest.mark.asyncio
 

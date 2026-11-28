@@ -3,7 +3,7 @@ import pytest
 from metpy.units import units
 import metpy.calc as mpcalc
 
-from core.storm_indices import (
+from stormlab.core.storm_indices import (
     PRESSURE_LEVELS,
     build_storm_report,
     calculate_brn,

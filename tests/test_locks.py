@@ -1,8 +1,8 @@
 """3B: named/keyed locks and cache integrity under concurrent access."""
 import threading
 
-from core.locks import KeyedLocks, get_lock
-import clients.geocoding as geo
+from stormlab.core.locks import KeyedLocks, get_lock
+import stormlab.clients.geocoding as geo
 
 
 def test_get_lock_returns_same_lock_per_name():

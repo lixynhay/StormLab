@@ -9,8 +9,8 @@ import pandas as pd
 import requests
 from siphon.simplewebservice.wyoming import WyomingUpperAir
 
-from config import WYOMING_TIMEOUT
-from core.locks import get_lock
+from stormlab.config import WYOMING_TIMEOUT
+from stormlab.core.locks import get_lock
 
 logger = logging.getLogger(__name__)
 

@@ -4,11 +4,11 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-import alert_manager
-import api
-from clients import sounding_api
-from clients.openmeteo_api import OpenMeteoAPI
-from core.storm_indices import PRESSURE_LEVELS, SKEWT_LEVELS, calculate_hodograph_shear_srh
+import stormlab.alert_manager as alert_manager
+import stormlab.api as api
+from stormlab.clients import sounding_api
+from stormlab.clients.openmeteo_api import OpenMeteoAPI
+from stormlab.core.storm_indices import PRESSURE_LEVELS, SKEWT_LEVELS, calculate_hodograph_shear_srh
 
 API_KEY = "audit-fix-key-0123456789"
 

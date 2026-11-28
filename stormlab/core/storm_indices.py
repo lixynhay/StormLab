@@ -3,7 +3,7 @@ import numpy as np
 import metpy.calc as mpcalc
 from metpy.units import units
 
-from core.effective_layer import (
+from stormlab.core.effective_layer import (
     find_effective_layer,
     effective_srh,
     effective_bulk_shear,
@@ -701,7 +701,7 @@ def calculate_threat_level(
     100, and the seasonal alert ``cape_min`` is 200): three distinct numbers
     for three distinct mechanisms. Do not unify them.
     """
-    from core.season_regime import thresholds_for
+    from stormlab.core.season_regime import thresholds_for
 
     thresholds = thresholds_for(regime) if thresholds is None else thresholds
     score = 0

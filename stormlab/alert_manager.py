@@ -13,15 +13,15 @@ Three distinct CAPE numbers are deliberately NOT unified:
 import sqlite3
 import logging
 from contextlib import contextmanager
-from pathlib import Path
 from typing import List, Dict, Optional
 
-from config import MAX_ALERTS_PER_USER
-from core.season_regime import thresholds_for
+from stormlab.config import MAX_ALERTS_PER_USER
+from stormlab.paths import DATA_DIR
+from stormlab.core.season_regime import thresholds_for
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("data/alerts.db")
+DB_PATH = DATA_DIR / "alerts.db"
 
 ALERT_COOLDOWN_HOURS = 2
 

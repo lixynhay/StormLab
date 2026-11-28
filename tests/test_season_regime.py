@@ -1,5 +1,5 @@
-from core.season_regime import get_regime, interpret, thresholds_for
-from core.storm_indices import calculate_threat_level
+from stormlab.core.season_regime import get_regime, interpret, thresholds_for
+from stormlab.core.storm_indices import calculate_threat_level
 
 
 def test_get_regime_by_latitude_and_month():

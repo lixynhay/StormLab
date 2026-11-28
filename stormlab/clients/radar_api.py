@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from core.locks import get_lock
+from stormlab.core.locks import get_lock
 
 logger = logging.getLogger(__name__)
 

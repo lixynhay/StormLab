@@ -3,13 +3,13 @@ import time
 
 import requests
 
-from config import (
+from stormlab.config import (
     OPENWEATHERMAP_API_KEY,
     OWM_API_TIMEOUT,
     OWM_RETRY_ATTEMPTS,
     OWM_RETRY_DELAY,
 )
-from core.text_safety import redact_secrets
+from stormlab.core.text_safety import redact_secrets
 
 logger = logging.getLogger(__name__)
 

@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-import api
-from clients.openmeteo_api import OpenMeteoAPI
+import stormlab.api as api
+from stormlab.clients.openmeteo_api import OpenMeteoAPI
 
 
 API_KEY = "0123456789abcdef0123456789abcdef"

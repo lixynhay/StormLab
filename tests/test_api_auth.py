@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-import api
+import stormlab.api as api
 
 
 def test_documentation_page_is_public():

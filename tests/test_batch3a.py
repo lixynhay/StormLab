@@ -7,11 +7,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-import api
-import bot
-import clients.openmeteo_api as om
-import rate_limiter
-from core.text_safety import escape_markdown, redact_secrets
+import stormlab.api as api
+import stormlab.bot as bot
+import stormlab.clients.openmeteo_api as om
+import stormlab.rate_limiter as rate_limiter
+from stormlab.core.text_safety import escape_markdown, redact_secrets
 from telegram.error import Forbidden, NetworkError
 
 API_KEY = "0123456789abcdef0123456789abcdef"
@@ -246,7 +246,7 @@ def test_forbidden_removes_subscription_but_network_error_does_not(monkeypatch):
 
 
 def test_prune_history_keeps_cooldown_window(tmp_path, monkeypatch):
-    import alert_manager as am
+    import stormlab.alert_manager as am
 
     monkeypatch.setattr(am, "DB_PATH", tmp_path / "alerts.db")
     am.init_db()
@@ -267,7 +267,7 @@ def test_prune_history_keeps_cooldown_window(tmp_path, monkeypatch):
 
 
 def test_sqlite_connection_closed_on_exception(tmp_path, monkeypatch):
-    import alert_manager as am
+    import stormlab.alert_manager as am
 
     class FakeConn:
         closed = False

@@ -3,7 +3,7 @@ import asyncio
 import sqlite3
 import types
 
-import bot
+import stormlab.bot as bot
 from telegram.error import Forbidden, NetworkError
 
 

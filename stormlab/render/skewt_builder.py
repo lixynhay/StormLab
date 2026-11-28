@@ -8,8 +8,8 @@ import numpy as np
 import metpy.calc as mpcalc
 from metpy.plots import SkewT
 from metpy.units import units
-from core.storm_indices import PRESSURE_LEVELS, build_wind_profile
-from render.chart_builder import _serialized_matplotlib_render
+from stormlab.core.storm_indices import PRESSURE_LEVELS, build_wind_profile
+from stormlab.render.chart_builder import _serialized_matplotlib_render
 
 logger = logging.getLogger(__name__)
 

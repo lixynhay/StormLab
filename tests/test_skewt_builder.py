@@ -4,7 +4,7 @@ import pytest
 from metpy.plots import SkewT
 from metpy.units import units
 
-from render.skewt_builder import _draw_hodograph, _draw_skewt, _select_spaced_barbs
+from stormlab.render.skewt_builder import _draw_hodograph, _draw_skewt, _select_spaced_barbs
 
 
 pytestmark = pytest.mark.filterwarnings(

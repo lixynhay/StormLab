@@ -2,7 +2,7 @@ import functools
 import logging
 import threading
 import time
-from config import ADMIN_USER_IDS
+from stormlab.config import ADMIN_USER_IDS
 
 logger = logging.getLogger(__name__)
 
