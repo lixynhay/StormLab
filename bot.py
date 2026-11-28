@@ -70,10 +70,6 @@ def get_skewt_ctx(chat_id: int, msg_id: int):
         return _skewt_ctx.get((chat_id, msg_id))
 
 
-def drop_skewt_ctx(chat_id: int, msg_id: int) -> None:
-    with _skewt_ctx_lock:
-        _skewt_ctx.pop((chat_id, msg_id), None)
-
 TIME_OFFSETS = [
     {"label": "Сейчас", "hours": 0},
     {"label": "+3 часа", "hours": 3},

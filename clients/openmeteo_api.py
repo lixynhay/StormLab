@@ -213,18 +213,6 @@ class OpenMeteoAPI:
 
         raise Exception(f"API request failed after {API_RETRY_ATTEMPTS} attempts: {last_error}")
 
-    def get_forecast(self, days: int = 2, lat: Optional[float] = None, lon: Optional[float] = None) -> Dict[str, Any]:
-        params = {
-            "hourly": "temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,surface_pressure,visibility,uv_index",
-            "current": "temperature_2m,relative_humidity_2m,dew_point_2m,apparent_temperature,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m",
-            "temperature_unit": "celsius",
-            "wind_speed_unit": "ms",
-            "pressure_unit": "hPa",
-            "timezone": "UTC",
-            "forecast_days": max(int(days), 2),
-        }
-        return self._make_request(params, cache_key=f"forecast_{days}", lat=lat, lon=lon)
-
     def get_current(self, lat: float, lon: float) -> Dict[str, Any]:
         params = {
             "latitude": lat,
@@ -265,17 +253,3 @@ class OpenMeteoAPI:
         }
         return self._make_request(params, cache_key="pressure_levels", lat=lat, lon=lon)
 
-    def get_precipitation_nowcast(self, lat: Optional[float] = None, lon: Optional[float] = None) -> Dict[str, Any]:
-        params = {
-            "hourly": "precipitation",
-            "current": "precipitation",
-            "timezone": "UTC",
-            "forecast_days": 1,
-        }
-        return self._make_request(params, cache_key="precipitation_nowcast", lat=lat, lon=lon)
-
-    def clear_cache(self):
-        with self._cache_lock:
-            self._cache.clear()
-            self._cache_timestamps.clear()
-        logger.info("Cache cleared")

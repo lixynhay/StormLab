@@ -311,13 +311,4 @@ def prune_history(max_age_days: int = 30) -> int:
         return 0
 
 
-def _self_check():
-    """Минимальная проверка логики порогов (используется тестами)."""
-    hot = {"cape": 2500, "bulk_shear_06": 25, "cin": -50, "lcl": 850.0}
-    calm = {"cape": 100, "bulk_shear_06": 3, "cin": -300, "lcl": 900.0}
-    assert check_dangerous_conditions(hot) is not None, "dangerous profile must trigger alert"
-    assert check_dangerous_conditions(calm) is None, "calm profile must not trigger alert"
-    return True
-
-
 init_db()

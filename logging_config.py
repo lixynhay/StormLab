@@ -1,10 +1,7 @@
 import logging
 import os
-import platform
 import sqlite3
 import subprocess
-import sys
-from importlib.util import find_spec
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -97,63 +94,3 @@ def _repository_version() -> str:
         return "unknown"
 
 
-def setup_banner(mode: str, host: str | None = None, port: int | None = None) -> None:
-    # Emit startup facts as one structured INFO record; no prints or missing-key warnings.
-    from config import (
-        API_HOST,
-        API_ACCESS_KEY,
-        GEMINI_API_KEY,
-        GROQ_API_KEY,
-        GITHUB_TOKEN,
-        OPENROUTER_API_KEY,
-        OPENWEATHERMAP_API_KEY,
-    )
-
-    repository_root = Path(__file__).resolve().parent
-    db_path = repository_root / "data" / "alerts.db"
-    persistence_path = repository_root / "data" / "persistence.pkl"
-    subscriptions = _subscription_count(db_path)
-    database_size = db_path.stat().st_size if db_path.is_file() else 0
-    persistence_size = persistence_path.stat().st_size if persistence_path.is_file() else 0
-
-    providers = []
-    if GEMINI_API_KEY:
-        providers.append("Gemini")
-    if GROQ_API_KEY:
-        providers.append("Groq")
-    if GITHUB_TOKEN:
-        providers.append("GitHub")
-    if OPENROUTER_API_KEY:
-        providers.append("OpenRouter")
-    providers.append("Local")
-    ai_status = ", ".join(providers)
-    if not any((GEMINI_API_KEY, GROQ_API_KEY, GITHUB_TOKEN, OPENROUTER_API_KEY)):
-        ai_status += " (cloud providers disabled; local fallback active)"
-
-    jobs = "none"
-    if mode.upper() == "BOT":
-        jobs = (
-            "alerts_check every 30m"
-            if find_spec("apscheduler") is not None
-            else "alerts_check disabled (JobQueue extra unavailable)"
-        )
-
-    host = host or API_HOST
-    service = f"listening={host}:{port}" if mode.upper() == "REST" and port else ""
-    api_access = "API key configured" if API_ACCESS_KEY else "API key missing (protected routes return 401)"
-    disabled = "OWM disabled (no OPENWEATHERMAP_API_KEY)" if not OPENWEATHERMAP_API_KEY else "OWM enabled"
-    lines = [
-        "╔══════════════════════════════════════════════════════════════╗",
-        f"║ StormLab | MODE {mode.upper()}",
-        f"║ Version: {_repository_version()} | Python: {platform.python_version()} | {platform.platform()}",
-        f"║ Sources: Open-Meteo OK | RainViewer OK | {disabled}",
-        f"║ AI providers: {ai_status}",
-        f"║ Storage: {db_path.relative_to(repository_root)} ({database_size} B), subscriptions={subscriptions}; "
-        f"{persistence_path.relative_to(repository_root)} ({persistence_size} B)",
-        f"║ Jobs: {jobs} | {api_access}" + (f" | {service}" if service else ""),
-        "╚══════════════════════════════════════════════════════════════╝",
-    ]
-    banner = "\n".join(lines)
-    if sys.stdout.isatty():
-        banner = f"\033[36m{banner}\033[0m"
-    logging.getLogger("stormlab.startup").info("\n%s", banner)

@@ -90,11 +90,3 @@ def get_latest_radar_frame(force_check=False):
             _cache["last_check"] = now
         return None, None, False
 
-def is_radar_available():
-    now = time.time()
-    with _RADAR_LOCK:
-        expired = (now - _cache["last_check"]) >= _cache["ttl"]
-    if expired:
-        get_latest_radar_frame()
-    with _RADAR_LOCK:
-        return _cache["is_valid"]
