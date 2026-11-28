@@ -37,6 +37,8 @@ jobs:
         continue-on-error: true
         run: uv run bandit -r stormlab -f json -o bandit-nightly.json
       - name: Vulture full sweep (confidence 60)
+        # FastAPI routes look "unused" to vulture; keep the sweep going.
+        continue-on-error: true
         run: uv run vulture stormlab --min-confidence 60 > vulture-nightly.txt
       - name: pip-audit
         run: uv run pip-audit --format json > pip-audit-nightly.json
