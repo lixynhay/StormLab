@@ -21,10 +21,24 @@ jobs:
       - uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
-      - name: Install dev layer with uv
-        run: uv pip install --system -r requirements-dev.txt
+      - name: Install runtime + dev layer with uv
+        run: uv pip install --system --no-build -r requirements.txt -r requirements-dev.txt
       - name: Ruff (unused imports / locals)
         run: ruff check . --select F401,F841
+      # Blocking static/security gates. mypy uses the gradual profile in
+      # mypy.ini (documented per-module exceptions, no runtime changes).
+      - name: mypy (gradual profile)
+        run: uv run mypy --config-file mypy.ini stormlab
+      - name: bandit (high/medium only)
+        run: uv run bandit -r stormlab -ll
+      # Advisory only on the first stage: third-party CVEs and legacy dead
+      # code must not paint the trunk red. Nightly makes them visible.
+      - name: vulture (advisory)
+        continue-on-error: true
+        run: uv run vulture stormlab --min-confidence 90
+      - name: pip-audit (advisory)
+        continue-on-error: true
+        run: uv run pip-audit
 
   agents:
     name: agents (sync_agents --check)
