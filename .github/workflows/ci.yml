@@ -14,27 +14,31 @@ jobs:
     name: lint (ruff)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
-      - name: Install lint tools
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install ruff
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
+      - name: Install ruff with uv
+        run: uv pip install --system ruff
       - name: Ruff (unused imports / locals)
-        run: python -m ruff check . --select F401,F841
+        run: ruff check . --select F401,F841
 
   agents:
     name: agents (sync_agents --check)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
       - name: Verify generated agent adapters are in sync
-        run: python scripts/sync_agents.py --check
+        run: uv run --no-project python scripts/sync_agents.py --check
 
   test:
     name: test py${{ matrix.python-version }} / ${{ matrix.os }} (pytest --cov=stormlab)
@@ -49,31 +53,43 @@ jobs:
           - os: windows-latest
             python-version: "3.13"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies (binary wheels only, see README)
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: uv version
+        run: uv --version
+      # A local .venv makes `uv run` deterministic; `--system` would depend on
+      # which interpreter uv discovers on a fresh runner.
+      - name: Create uv environment and install runtime dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install --only-binary=:all: -r requirements.txt
+          uv venv --python ${{ matrix.python-version }}
+          uv pip install --no-build -r requirements.txt
       # Baseline 73% was measured with `--cov=.` (code + tests). With
       # `--cov=stormlab` only, the same suite gives 64.43% on Python 3.11;
       # the gate is set to 64 so it reflects application code only.
       - name: Pytest with coverage gate
-        run: python -m pytest --cov=stormlab --cov-report=term-missing --cov-fail-under=64 -q
+        run: uv run pytest --cov=stormlab --cov-report=term-missing --cov-fail-under=64 -q
 
   smoke:
     name: smoke (import bot, api)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Install runtime dependencies
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - name: Create uv environment with runtime dependencies only
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install --only-binary=:all: -r requirements.txt
+          uv venv --python 3.12
+          uv pip install --no-build -r requirements.txt
       - name: Import smoke
-        run: python -c "import bot, api; print('imports ok')"
+        run: uv run python -c "import bot, api; print('imports ok')"
