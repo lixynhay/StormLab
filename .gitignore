@@ -17,3 +17,6 @@ venv/
 .claude/settings.local.json
 .claude/skills/
 .claude/worktrees/
+.pytest_cache/
+.ruff_cache/
+logs/
