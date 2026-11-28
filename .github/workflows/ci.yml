@@ -37,12 +37,17 @@ jobs:
         run: python scripts/sync_agents.py --check
 
   test:
-    name: test py${{ matrix.python-version }} (pytest --cov=stormlab)
-    runs-on: ubuntu-latest
+    name: test py${{ matrix.python-version }} / ${{ matrix.os }} (pytest --cov=stormlab)
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+        exclude:
+          # numpy >= 2.5.5 has no cp313 wheels on windows runners.
+          - os: windows-latest
+            python-version: "3.13"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -65,7 +70,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install runtime dependencies
         run: |
           python -m pip install --upgrade pip

@@ -95,18 +95,28 @@ git clone https://github.com/lixynhay/StormLab.git
 cd StormLab
 ```
 
-### 2. Создание виртуального окружения
+### 2. Создание виртуального окружения (uv, Python 3.12)
+
+Проект требует Python **≥3.12** (numpy ≥2.5.5). Если `uv` ещё не установлен:
+```powershell
+# Windows (user scope, без админа)
+irm https://astral.sh/uv/install.ps1 | iex
+```
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+# POSIX
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```bash
+uv venv --python 3.12
+# активация: Windows — .venv\Scripts\activate, POSIX — source .venv/bin/activate
 ```
 
 ### 3. Установка зависимостей
 ```bash
-pip install --upgrade pip
-pip install -r requirements.txt
+uv pip install --no-build -r requirements.txt
 ```
-*(Рекомендуется использовать `--only-binary=:all:` для избежания компиляции C-расширений на свежих версиях Python).*
+`--no-build` — бывший `--only-binary=:all:`; он не даёт MetPy/numpy компилироваться на свежих интерпретаторах. Dev-инструменты (`pytest`, `ruff`, `mypy` и др.) пока ставятся отдельно; выделение их в `requirements-dev.txt` — следующий шаг миграции.
 
 Все зависимости REST API (`fastapi`, `uvicorn`) уже входят в `requirements.txt` — отдельная установка не требуется.
 
