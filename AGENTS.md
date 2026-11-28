@@ -16,12 +16,12 @@ This repository maintains a pre-built architectural knowledge graph in `graphify
 
 Canonical bodies live in `agents/` and are the single source of truth:
 
-- [architect](agents/architect.md) — read-only analysis and step-by-step plans (`tier: strong`).
-- [coder](agents/coder.md) — implementation and tests after an approved plan (`tier: fast`).
-- [reviewer](agents/reviewer.md) — read-only audit and verdict (`tier: strong`).
+- [architect](agents/architect.md) — read-only analysis and step-by-step plans.
+- [coder](agents/coder.md) — implementation and tests after an approved plan.
+- [reviewer](agents/reviewer.md) — read-only audit and verdict.
 
 Shared guardrails: [skills/stormlab-dev.md](skills/stormlab-dev.md).
-Model mapping: [agents/models.json](agents/models.json) (Claude: opus/sonnet; OpenCode: placeholders to be filled).
+Model selection is delegated to the provider/router on the API side — there is no `model` field and no models.json.
 
 Workflow: **architect → coder → reviewer**. The architect must finish and get the plan approved before the coder writes code; the coder commits only after tests pass; the reviewer audits the diff and returns APPROVE or REQUEST CHANGES.
 

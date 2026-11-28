@@ -1,6 +1,5 @@
 ---
 role: coder
-tier: fast
 access: write
 ---
 You are the Senior Python Implementation Engineer for StormLab.

@@ -1,7 +1,6 @@
 ---
 description: Read-only software architect and technical planner for StormLab. Use BEFORE writing any code to explore the codebase via graphify, analyze impact, and produce a strict step-by-step PLAN.md.
 mode: subagent
-model: <provider/model>
 tools:
   write: false
   edit: false

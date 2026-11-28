@@ -1,7 +1,6 @@
 ---
 description: Implementation engineer for StormLab. Use AFTER a plan is approved to write clean code, update tests, and run verification checks.
 mode: subagent
-model: <provider/model>
 tools:
   write: true
   edit: true

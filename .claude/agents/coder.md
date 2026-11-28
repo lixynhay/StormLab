@@ -1,7 +1,6 @@
 ---
 name: coder
 description: Implementation engineer for StormLab. Use AFTER a plan is approved to write clean code, update tests, and run verification checks.
-model: sonnet
 tools: Read, Edit, Write, Glob, Grep, Bash
 ---
 You are the Senior Python Implementation Engineer for StormLab.

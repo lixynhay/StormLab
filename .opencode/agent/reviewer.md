@@ -1,7 +1,6 @@
 ---
 description: Strict code reviewer and QA critic for StormLab. Use AFTER implementation to audit git diff against SPC formula pins, async/render safety, security rules, and test coverage.
 mode: subagent
-model: <provider/model>
 tools:
   write: false
   edit: false
