@@ -231,7 +231,6 @@ def _draw_hodograph(ax, pressures, speeds, dirs):
         ax.set_visible(False)
         return
     try:
-        p = np.array(pressures) * units.hPa
         speed = np.array(speeds) * units("m/s")
         direction = np.array(dirs) * units.deg
         u, v = mpcalc.wind_components(speed, direction)

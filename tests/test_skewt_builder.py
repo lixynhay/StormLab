@@ -1,8 +1,6 @@
 import matplotlib.pyplot as plt
-import metpy.calc as mpcalc
 import numpy as np
 import pytest
-import matplotlib.pyplot as plt
 from metpy.plots import SkewT
 from metpy.units import units
 

@@ -1,5 +1,5 @@
 import logging
-from ai.ai_providers import build_provider_chain, LocalProvider
+from ai.ai_providers import build_provider_chain
 
 logger = logging.getLogger(__name__)
 

@@ -8,10 +8,9 @@ import sys
 import time
 from datetime import datetime, timezone
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
-from telegram.constants import ParseMode
 from telegram.error import TimedOut, NetworkError, Forbidden
 from telegram.ext import (
-    Application, CallbackQueryHandler, CommandHandler, ContextTypes, JobQueue,
+    Application, CallbackQueryHandler, CommandHandler, ContextTypes,
 )
 from telegram.request import HTTPXRequest
 

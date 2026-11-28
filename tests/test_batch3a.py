@@ -1,7 +1,6 @@
 """Batch 3A tests: REST time-index, redaction, markdown, ctx isolation, subscriptions."""
 import asyncio
 import logging
-import sqlite3
 import types
 from datetime import datetime, timedelta, timezone
 

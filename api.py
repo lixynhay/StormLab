@@ -1,4 +1,3 @@
-import io
 import logging
 import hmac
 import hashlib
@@ -7,14 +6,13 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
-from config import API_ACCESS_KEY, API_HOST, API_TIMEOUT
+from config import API_ACCESS_KEY, API_HOST
 from clients.openmeteo_api import OpenMeteoAPI, resolve_hour_index
 from clients.openweathermap_api import OpenWeatherMapAPI
 from clients.data_fusion import fuse_current_weather

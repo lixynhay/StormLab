@@ -9,7 +9,7 @@ import pytest
 import alert_manager
 import rate_limiter
 from ai.ai_providers import (
-    GeminiProvider, LocalProvider, OpenAICompatProvider, _rule_based_analysis,
+    GeminiProvider, OpenAICompatProvider, _rule_based_analysis,
 )
 from clients.openmeteo_api import current_hour_index, resolve_hour_index
 from core.season_regime import get_regime

@@ -1,5 +1,4 @@
 import logging
-import time
 
 from config import GEMINI_API_TIMEOUT, LLM_REQUEST_TIMEOUT
 from core.season_regime import thresholds_for

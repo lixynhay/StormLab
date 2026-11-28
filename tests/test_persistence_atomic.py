@@ -1,6 +1,5 @@
 """3B: atomic persistence must never leave a partial file or temp debris."""
 import asyncio
-import pickle
 
 import pytest
 from telegram.ext import PersistenceInput
