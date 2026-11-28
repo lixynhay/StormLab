@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 import stormlab.api as api
@@ -73,9 +75,12 @@ def test_api_fails_closed_without_key():
     assert response.status_code == 401
 
 
-def test_api_rate_limit():
+def test_api_rate_limit(monkeypatch):
     api.API_ACCESS_KEY = "test-secret-0123456789"
     api._rest_rate_limits.clear()
+    # The limiter buckets by UTC minute; freezing it avoids a boundary crossing
+    # that made the 61st request occasionally return 200 instead of 429.
+    monkeypatch.setattr(api, "time", SimpleNamespace(time=lambda: 1000.0))
 
     with TestClient(api.app) as client:
         for _ in range(api.REST_RATE_LIMIT):
