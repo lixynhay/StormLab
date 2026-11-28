@@ -19,6 +19,7 @@ from clients.data_fusion import fuse_current_weather
 from core.storm_indices import build_storm_report, format_storm_text, build_skewt_context_for_ai
 from core.season_regime import get_regime
 from core.text_safety import redact_secrets
+from core.async_helpers import run_sync
 from render.chart_builder import build_profile_chart
 from render.skewt_builder import build_skewt_chart
 from clients.geocoding import resolve_city
@@ -60,6 +61,23 @@ def _internal_error(context: str, exc: Exception) -> HTTPException:
     request_id = uuid.uuid4().hex
     logger.error(f"{context} [request_id={request_id}]: {exc}", exc_info=True)
     return HTTPException(status_code=500, detail=f"Internal error (request_id={request_id})")
+
+
+def _build_storm_report_sync(lat: float, lon: float, time_index: int, city: str):
+    """Blocking work for /api/storm, executed in a worker thread."""
+    current_data, pressure_data, source_label, regime = _get_fused_data(lat, lon, time_index)
+    report = build_storm_report(current_data, pressure_data, regime=regime)
+    timestamp_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    formatted_text = format_storm_text(report, city, timestamp_str)
+    return current_data, pressure_data, source_label, regime, report, timestamp_str, formatted_text
+
+
+def _ai_analysis_sync(lat: float, lon: float, time_index: int, city: str) -> str:
+    """Blocking work for /api/ai-analysis, executed in a worker thread."""
+    current_data, pressure_data, _, regime = _get_fused_data(lat, lon, time_index)
+    report = build_storm_report(current_data, pressure_data, regime=regime)
+    skewt_ctx = build_skewt_context_for_ai(report, current_data["current"], pressure_data)
+    return generate_storm_analysis(report, city, skewt_ctx)
 
 
 app = FastAPI(
@@ -233,7 +251,7 @@ async def health_check():
 
 @app.get("/api/geocode", response_model=GeocodeResponse)
 async def geocode(query: str = Query(..., min_length=1, max_length=100, description="Название города")):
-    result = resolve_city(query)
+    result = await run_sync(resolve_city, query)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Город '{query}' не найден")
     lat, lon, name = result
@@ -248,10 +266,10 @@ async def get_storm_report(
     time_index: int = Query(0, ge=0, le=len(_TIME_OFFSET_HOURS) - 1, description="Индекс времени (0=сейчас, 1=+3ч, 2=+6ч, 3=+12ч, 4=+24ч)")
 ):
     try:
-        current_data, pressure_data, source_label, regime = _get_fused_data(lat, lon, time_index)
-        report = build_storm_report(current_data, pressure_data, regime=regime)
-        timestamp_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        formatted_text = format_storm_text(report, city, timestamp_str)
+        (current_data, pressure_data, source_label, regime,
+         report, timestamp_str, formatted_text) = await run_sync(
+            _build_storm_report_sync, lat, lon, time_index, city
+        )
 
         return StormReportResponse(
             city=city,
@@ -340,11 +358,9 @@ def get_radar(
 @app.post("/api/ai-analysis", response_model=AIAnalysisResponse)
 async def get_ai_analysis(request: AIAnalysisRequest):
     try:
-        current_data, pressure_data, _, regime = _get_fused_data(request.lat, request.lon, request.time_index)
-        report = build_storm_report(current_data, pressure_data, regime=regime)
-
-        skewt_ctx = build_skewt_context_for_ai(report, current_data["current"], pressure_data)
-        analysis = generate_storm_analysis(report, request.city, skewt_ctx)
+        analysis = await run_sync(
+            _ai_analysis_sync, request.lat, request.lon, request.time_index, request.city
+        )
 
         return AIAnalysisResponse(
             city=request.city,

@@ -1,8 +1,8 @@
 # CONFLICTS — зависимости, гонки, async-блокировки (AUTO)
 
-Дата: 2026-11-28. Все замеры reproducible скриптами в `graphify-out/verify/` (каталог игнорируется Git). Фиксов нет — только классификация.
+Дата: 2026-11-28. Все замеры reproducible скриптами в `graphify-out/verify/` (каталог игнорируется Git). F-06 исправлен (ветка `fix-f06-async`); остальные находки — только классификация.
 
-## F-06 — синхронные вызовы внутри async-эндпоинтов: **MAJOR**
+## F-06 — синхронные вызовы внутри async-эндпоинтов: **MAJOR → RESOLVED**
 
 **Локация:** `api.py:236` (`resolve_city`), `api.py:251-252` (`_get_fused_data`, `build_storm_report` внутри `async def get_storm_report`), `api.py:277`, `api.py:302`, `api.py:345` — синхронные сетевые/расчётные вызовы без `to_thread`. В `bot.py` часть вызовов обёрнута в `asyncio.to_thread` (например `bot.py:564-565`), но рендер Skew-T — синхронный.
 
@@ -13,10 +13,19 @@ VERDICT: EVENT LOOP BLOCKED
 10x /api/storm: p50=3016.0 ms p95=3016.0 ms min=3016.0 max=3016.0 wall=3016.0 ms
 sequential-equivalent: 10 x 300 ms = 3000 ms; observed 3016.0 ms
 ```
-То есть лёгкий `/api/health` ждёт тяжёлый запрос, а 10 параллельных `/api/storm` выполняются **строго последовательно** (3016 мс ≈ 10×300 мс). Реальный рендер Skew-T в отденом замере — 138.9 с / 50 вызовов = **~2.8 с на рендер**, так что в проде задержка будет больше синтетической. Замер сделан на реальном `api.app` через `ASGITransport`, внешняя сеть не использовалась.
+То есть лёгкий `/api/health` ждёт тяжёлый запрос, а 10 параллельных `/api/storm` выполняются **строго последовательно** (3016 мс ≈ 10×300 мс). Реальный рендер Skew-T в отдельном замере — 138.9 с / 50 вызовов = **~2.8 с на рендер**, так что в проде задержка будет больше синтетической. Замер сделан на реальном `api.app` через `ASGITransport`, внешняя сеть не использовалась.
 
-**Шаги воспроизведения:** запустить `python graphify-out/verify/loop_block.py` из корня репозитория (внешняя сеть не нужна).
-**Рекомендация (не применялось):** обернуть синхронные вызовы в `asyncio.to_thread` либо перевести эндпоинты в `def` (FastAPI сам уведёт их в threadpool). Отдельный батч после одобрения; `concurrent_updates(True)` не включать.
+**После фикса (та же ветка, тот же скрипт):**
+```
+F-06 blocking: health=15..31 ms while /api/storm=312..328 ms (health=200, storm=503)
+VERDICT: loop responsive
+10x /api/storm: p50=297..313 ms p95=297..313 ms wall=297..313 ms
+```
+`loop.time()` на Windows квантуется ~15.6 мс, поэтому 15/31 мс — потолок разрешения этого скрипта. Высокоточный замер `verify/health_latency.py` (`time.perf_counter`, 20 прогонов): **min 0.97 мс, median 1.03 мс, max 2.39 мс** — критерий `<10 мс` выполнен. Критерий p95 `<1000 мс` выполнен с запасом (297–313 мс).
+
+**Что сделано:** `core/async_helpers.py::run_sync` (`asyncio.to_thread`); `api.py` — `geocode`, `/api/storm`, `/api/ai-analysis` переведены на helper; `bot.py` — 5 оставшихся вызовов `build_storm_report`. Рендеры уже сериализованы существующим `_MATPLOTLIB_RENDER_LOCK` (`render/chart_builder.py:18`), новый лок не добавлялся. Регрессия: `tests/test_api_async_nonblocking.py` (3 теста), pytest 158 passed / 3 skipped, coverage 73.42 %, ruff 0. `concurrent_updates` не включался.
+
+**Шаги воспроизведения:** `python graphify-out/verify/loop_block.py` и `python graphify-out/verify/health_latency.py` из корня репозитория (внешняя сеть не нужна).
 
 ## F-17 — callback_data `time:N` без проверки границ: **MINOR**
 
@@ -71,7 +80,7 @@ sequential-equivalent: 10 x 300 ms = 3000 ms; observed 3016.0 ms
 
 | ID | Класс | Статус |
 |---|---|---|
-| F-06 | MAJOR | event loop блокируется синхронными вызовами; пруф с числами есть |
+| F-06 | RESOLVED | было health 328 мс / p95 3016 мс → стало health ~1 мс (high-res) / p95 297–313 мс |
 | F-17 | MINOR | нет валидации `time_idx`; пруф статический + AUTO-скрипт |
 | F-18 | MINOR | неиспользуемые константы в WIP |
 | F-19 | INFO |double-check утерян в WIP геокодера |
