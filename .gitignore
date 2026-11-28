@@ -11,3 +11,9 @@ graphify-out/
 venv/
 .mcp.json
 .claude/
+!.claude/
+!.claude/agents/
+!.claude/agents/*.md
+.claude/settings.local.json
+.claude/skills/
+.claude/worktrees/
