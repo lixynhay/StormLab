@@ -35,9 +35,11 @@ def _nd_render(value, missing="н/д"):
 def _as_float(value):
     """Numeric guard for values that must stay numeric (e.g. abs(CIN))."""
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return 0.0
+    # Non-finite model output is missing data, not a numeric cap.
+    return number if np.isfinite(number) else 0.0
 
 
 def interpret_cin(cin_value, regime="warm"):
@@ -992,11 +994,11 @@ def format_storm_text(report: dict, city: str, timestamp_str: str) -> str:
 
     threat = report.get("threat_level", 0) or 0
 
-    dcape = report.get("dcape")
+    dcape_rendered = _nd_render(report.get("dcape"))
     dcape_text = (
         "н/д Дж/кг"
-        if dcape is None
-        else f"*{dcape}* Дж/кг — {_nd_render(report.get('dcape_interpretation'))}"
+        if dcape_rendered == "н/д"
+        else f"*{dcape_rendered}* Дж/кг — {_nd_render(report.get('dcape_interpretation'))}"
     )
 
     text = (

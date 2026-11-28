@@ -70,15 +70,17 @@ _FIELD = st.one_of(
     stp=_FIELD,
     lcl=_FIELD,
     dcape=_FIELD,
+    cin=_FIELD,
     interpretation=_FIELD,
 )
-def test_renderer_never_emits_none_nan_or_inf(cape, stp, lcl, dcape, interpretation):
+def test_renderer_never_emits_none_nan_or_inf(cape, stp, lcl, dcape, cin, interpretation):
     """Sparse/missing fields must render as «н/д», never as literal None/nan/inf."""
     report = {
         "cape": cape,
         "stp": stp,
         "lcl": lcl,
         "dcape": dcape,
+        "cin": cin,
         "dcape_interpretation": interpretation,
         "threat_level": 2,
     }
