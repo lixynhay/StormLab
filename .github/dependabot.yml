@@ -1,5 +1,6 @@
 version: 2
 updates:
+  # Root pip ecosystem covers both requirements.txt and requirements-dev.txt.
   - package-ecosystem: pip
     directory: "/"
     schedule:

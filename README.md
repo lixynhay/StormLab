@@ -116,7 +116,7 @@ uv venv --python 3.12
 ```bash
 uv pip install --no-build -r requirements.txt
 ```
-`--no-build` — бывший `--only-binary=:all:`; он не даёт MetPy/numpy компилироваться на свежих интерпретаторах. Dev-инструменты (`pytest`, `pytest-cov`, `ruff`, `mypy`, `bandit`, `hypothesis`, `pip-audit` и др.) вынесены в `requirements-dev.txt`:
+`--no-build` — бывший `--only-binary=:all:`; он не даёт MetPy/numpy компилироваться на свежих интерпретаторах. Файл `uv.lock` в репозиторий не коммитится: источник истины — `requirements*.txt`, чтобы Dependabot продолжал присылать обновления (trade-off зафиксирован в `AGENTS.md`). Dev-инструменты (`pytest`, `pytest-cov`, `ruff`, `mypy`, `bandit`, `hypothesis`, `pip-audit` и др.) вынесены в `requirements-dev.txt`:
 ```bash
 uv pip install --no-build -r requirements.txt -r requirements-dev.txt
 ```

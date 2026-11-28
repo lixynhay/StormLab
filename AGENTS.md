@@ -10,6 +10,13 @@ This repository maintains a pre-built architectural knowledge graph in `graphify
 - **Freshness check:** If `graphify-out/needs_update` exists (meaning docs or images changed since the last semantic build), notify the user or run `/graphify . --update` if documentation context is critical for the current task.
 - **Ignore build artifacts:** Do not manually read or edit `graphify-out/graph.json` directly (it is large and auto-managed by git hooks); rely on `GRAPH_REPORT.md` and the `graphify` CLI commands above.
 
+## Tooling policy (uv and layered checks)
+
+- **Replacement rule:** replace a tool only when the new one is a strict superset. `uv ⊃ pip` (same install/resolve interface plus environment and interpreter management) → the project uses `uv venv`, `uv pip install --no-build` and `uv run`; bare `pip`/`venv` are legacy.
+- **Complement rule:** `pytest` is the test runner, not a competing tool. Hypothesis (properties), mypy (types), bandit (security), vulture (dead code), pip-audit (CVEs), ruff (lint) and xdist (parallel execution) cover different axes — they complement pytest, they never replace it.
+- **Lockfile trade-off:** this repository intentionally does **not** commit `uv.lock`. The source of truth is `requirements.txt` (runtime) + `requirements-dev.txt` (dev), so Dependabot's pip ecosystem can keep opening update PRs for both. Deterministic production pinning with `uv.lock` is a separate future decision; when adopted, disable Dependabot-for-pip and move updates to `uv lock --upgrade-package X` in CI.
+- Environments: `uv venv --python 3.12`, `uv pip install --no-build -r requirements.txt [-r requirements-dev.txt]`, `uv run ...`.
+
 <!-- agents:start -->
 
 ## Subagents (portable)
