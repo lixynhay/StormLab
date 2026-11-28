@@ -50,7 +50,7 @@ AUTO-пруф агента (без Telegram): живой запрос RainViewer
 - [ ] SQLite: фоновый alert-цикл пишет + handler читает — `database is locked`?
 - [ ] Общие кэши под нагрузкой (AUTO: `tests/test_locks.py` — PASS; 2 потока).
 - [ ] `user_data` изоляция (AUTO: `test_ctx_is_keyed_by_chat_and_message` — PASS).
-- [ ] Callback tampering: `time:5`, `time:-1` — **AUTO-НАХОДКА: нет bounds check** (`bot.py:596`), живой краш подтвердить оператором.
+- [ ] Callback tampering: `time:5`, `time:-1` — **AUTO-НАХОДКА: нет bounds check** (`stormlab/bot.py:596`), живой краш подтвердить оператором.
 - [ ] Rate limiter: 100 запросов, pruning (AUTO: 100/100 allowed, 20×same-user → 1 allowed, prune удалил 50 простроченных).
 - [ ] JobQueue vs авто-рестарт: job не задваивается.
 

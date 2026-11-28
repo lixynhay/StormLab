@@ -32,8 +32,8 @@
 
 | Пакет | Проверка | Результат |
 |---|---|---|
-| `colorlog` | grep по всем `.py`: 0 вхождений; `logging_config.py` использует stdlib `logging.Formatter` + `RotatingFileHandler`; `import bot, api` стартует | **PASS** |
-| `groq` | grep: 0 `import groq`; провайдер использует OpenAI-совместимый клиент с `base_url=https://api.groq.com/openai/v1` (`ai/ai_providers.py:320`). Проверка с реальным ключом — OPERATOR | **STATIC PASS / LIVE=PENDING** |
+| `colorlog` | grep по всем `.py`: 0 вхождений; `stormlab/logging_config.py` использует stdlib `logging.Formatter` + `RotatingFileHandler`; `import bot, api` стартует | **PASS** |
+| `groq` | grep: 0 `import groq`; провайдер использует OpenAI-совместимый клиент с `base_url=https://api.groq.com/openai/v1` (`stormlab/ai/ai_providers.py:320`). Проверка с реальным ключом — OPERATOR | **STATIC PASS / LIVE=PENDING** |
 | `Cartopy` | grep: 0 `import cartopy`, даже в try/except | **PASS** |
 | `scipy` | прямого импорта нет; в чистом venv установлен транзитивно: scipy 1.17.1, совместим с numpy 2.4.6 / MetPy 1.7.1 / pint 0.25.3; `pip check` чистый | **PASS** |
 

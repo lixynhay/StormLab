@@ -1,6 +1,6 @@
 ---
 name: stormlab-dev
-description: Engineering guardrails, SPC meteorological formula pins, async/render rules, and verification checklists for StormLab. Use whenever editing core/storm_indices.py, core/effective_layer.py, core/season_regime.py, render/*, bot.py, api.py, or alert_manager.py.
+description: Engineering guardrails, SPC meteorological formula pins, async/render rules, and verification checklists for StormLab. Use whenever editing stormlab/core/storm_indices.py, stormlab/core/effective_layer.py, core/season_regime.py, render/*, bot.py, api.py, or stormlab/alert_manager.py.
 ---
 
 # StormLab Engineering Guardrails & Verification
@@ -8,14 +8,14 @@ description: Engineering guardrails, SPC meteorological formula pins, async/rend
 ## 1. Hard Architectural Invariants
 - **Environment**: Always use the project virtualenv (`venv\Scripts\python.exe` on Windows, `venv/bin/python` on POSIX) — never global Python.
 - **Graphify**: NEVER read `graphify-out/graph.json` directly. Use `graphify-out/GRAPH_REPORT.md` for architecture overview and `graphify query` / `graphify explain` / `graphify path` CLI commands for targeted lookups.
-- **Async & Rendering (`bot.py`, `api.py`, `render/*`)**:
+- **Async & Rendering (`stormlab/bot.py`, `stormlab/api.py`, `render/*`)**:
   - Never run synchronous Matplotlib/PIL rendering or blocking HTTP I/O directly inside `async def` handlers — always offload via `await asyncio.to_thread(...)`.
   - Always close Matplotlib figures inside a `finally:` block (`plt.close(fig)`).
-  - RainViewer live tile URLs (`render/radar_builder.py`) must include explicit `size`, `color`, and `options` parameters to prevent `"Zoom Level Not Supported"`.
-- **Security (`bot.py`, `api.py`)**:
+  - RainViewer live tile URLs (`stormlab/render/radar_builder.py`) must include explicit `size`, `color`, and `options` parameters to prevent `"Zoom Level Not Supported"`.
+- **Security (`stormlab/bot.py`, `stormlab/api.py`)**:
   - Validate `API_ACCESS_KEY` using `hmac.compare_digest`; fail-closed (`401`) if empty/unset.
   - Never expose raw exception details (`detail=str(e)`) in HTTP 500 responses.
-  - Apply `escape_markdown()` only to dynamic user/API strings in `bot.py`; validate `time_idx` and `wmo` callback parameters.
+  - Apply `escape_markdown()` only to dynamic user/API strings in `stormlab/bot.py`; validate `time_idx` and `wmo` callback parameters.
 
 ## 2. SPC Meteorological Formula Pins (`core/`)
 Do not alter these verified SPC definitions without updating unity and discriminating pin-tests:

@@ -148,60 +148,46 @@ python api.py   # uvicorn, порт 8000, хост из переменной API
 ```bash
 python -m pytest -q
 ```
-Набор включает REST auth и REST-путь через `TestClient`, сезонный режим, алерты и подписки, LocalProvider (структурированный report, None-guard), effective-layer, формулы `storm_indices` и RainViewer tile/stub обработку. Текущий результат: **155 passed, 3 skipped**, покрытие **73.1 %** (`python -m pytest --cov=. --cov-report=term`).
+Набор включает REST auth и REST-путь через `TestClient`, сезонный режим, алерты и подписки, LocalProvider (структурированный report, None-guard), effective-layer, формулы `storm_indices` и RainViewer tile/stub обработку. Текущий результат: **161 passed, 3 skipped**, покрытие **73.64 %** (`python -m pytest --cov=. --cov-report=term`).
 
 ---
 
 ## 📂 Структура проекта
 
-Точки входа и конфигурация остаются в корне; внутренние модули сгруппированы по назначению. Каталоги Python-модулей работают как namespace packages и не содержат `__init__.py`.
+В корне только точки входа, конфиги и документация. Весь код живёт в пакете `stormlab/` (обычные пакеты с `__init__.py`), логи — в `logs/`, рабочие планы — в `docs/plans/`. Команды запуска не изменились: `python bot.py` и `python api.py`.
 
 ```text
 StormLab/
- ├── bot.py                    # Telegram entrypoint, команды, callbacks, JobQueue, авто-рестарт
- ├── api.py                    # REST entrypoint: FastAPI auth/rate-limit и endpoints
- ├── config.py                 # Конфигурация из .env
- ├── logging_config.py         # Логирование с ротацией
- ├── alert_manager.py          # Подписки и SQLite alert history
- ├── rate_limiter.py           # Кулдауны команд
- ├── core/
- │   ├── storm_indices.py      # Метеорологические индексы и storm report
- │   ├── effective_layer.py    # SPC effective layer, ESRH/EBWD, STP(eff)/SCP(eff)
- │   └── season_regime.py      # Warm/cool thresholds и интерпретация
- ├── clients/
- │   ├── openmeteo_api.py      # Профили Open-Meteo, cache/retries/CircuitBreaker
- │   ├── openweathermap_api.py # Опциональные приземные данные OWM
- │   ├── data_fusion.py        # Слияние текущих погодных данных
- │   ├── geocoding.py          # Геокодирование Open-Meteo
- │   ├── sounding_api.py       # Поиск и загрузка Wyoming/IGRA2 soundings
- │   └── radar_api.py          # RainViewer frame discovery/cache
- ├── render/
- │   ├── chart_builder.py      # Skew-T профиль с parcel/CAPE/CIN
- │   ├── skewt_builder.py      # Skew-T, hodograph, sounding comparison
- │   └── radar_builder.py      # RainViewer tile mosaic и marker
- ├── ai/
- │   ├── ai_analysis.py        # AI prompt и fallback orchestration
- │   └── ai_providers.py       # Groq/GitHub/Gemini/OpenRouter/Local providers
- ├── docs/
- │   ├── api_docs.html         # Публичная страница GET /
- │   ├── AUDIT.md              # Технический аудит
- │   ├── CHARTS_AUDIT.md       # Аудит chart/render систем
- │   ├── DEAD_CODE.md          # Импортёры и inventory модулей
- │   ├── DEAD_CODE_REPORT.md   # Инвентарь findings и результаты очистки
- │   ├── CONCURRENCY.md        # Матрица глобалов/локов, предусловия Batch 4
- │   ├── PERSISTENCE.md        # Дизайн замены pickle (Batch 4)
- │   └── VERIFICATION.md       # Результаты проверок
- ├── PLAN.md                   # План удаления мёртвого кода (батчи A–E)
- ├── tests/
- │   ├── test_api_auth.py      # REST auth/docs/health/rate-limit
- │   ├── test_effective_layer.py
- │   ├── test_radar_api.py
- │   ├── test_radar_builder.py # RainViewer fixtures: echo/transparent/stub
- │   ├── test_season_regime.py
- │   ├── test_skewt_builder.py
- │   └── test_storm_indices_core.py
- ├── requirements.txt
- └── data/                     # Локальная SQLite и persistence; игнорируется Git
+├── bot.py                    # тонкий wrapper -> stormlab.bot.main()
+├── api.py                    # тонкий wrapper -> stormlab.api.main()
+├── stormlab/
+│   ├── __init__.py
+│   ├── paths.py              # PROJECT_ROOT / DATA_DIR / LOGS_DIR
+│   ├── bot.py                # Telegram-логика, callbacks, JobQueue, авто-рестарт
+│   ├── api.py                # FastAPI endpoints + main()
+│   ├── config.py             # конфигурация из .env
+│   ├── logging_config.py     # ротация логов в logs/bot.log
+│   ├── persistence.py        # AtomicPicklePersistence
+│   ├── rate_limiter.py       # кулдауны команд
+│   ├── alert_manager.py      # подписки и SQLite
+│   ├── core/                 # storm_indices, effective_layer, season_regime, locks,
+│   │                         # text_safety, async_helpers + __init__.py
+│   ├── clients/              # openmeteo, openweathermap, data_fusion, geocoding,
+│   │                         # sounding_api, radar_api + __init__.py
+│   ├── render/               # chart_builder, skewt_builder, radar_builder + __init__.py
+│   └── ai/                   # ai_analysis, ai_providers + __init__.py
+├── docs/
+│   ├── plans/                # PLAN.md, F06_FIX_PLAN.md, STRUCTURE_PLAN.md
+│   ├── api_docs.html         # публичная страница GET /
+│   └── AUDIT / CHARTS_AUDIT / DEAD_CODE* / CONCURRENCY / PERSISTENCE / VERIFICATION
+├── tests/
+├── scripts/sync_agents.py
+├── agents/                   # канонические architect/coder/reviewer
+├── skills/stormlab-dev.md
+├── data/                     # gitignored: alerts.db, persistence.pkl
+├── logs/                     # gitignored: bot.log + ротация 5 МБ × 3
+├── graphify-out/, venv/
+└── .claude/, .opencode/      # генерируются только через sync_agents.py
 ```
 
 ---
@@ -244,7 +230,7 @@ StormLab/
 - **3A**: защита REST (`time_index` → 422, `slot is None`), redaction секретов в логах/AI-тексте, escape только динамики, изоляция Skew-T-контекста по `(chat_id, message_id)`, обработка `Forbidden` без удаления подписок по другим ошибкам.
 - **3B**: именованные/keyed локи для кэшей, ограниченный LRU-контекст, блокировки rate-limiter, атомарная запись persistence (temp + `fsync` + `os.replace`). `concurrent_updates(False)` сохранён; включение обсуждается отдельно (`docs/CONCURRENCY.md`).
 - **Dead Code**: удалены неиспользуемые импорты/константы/функции, legacy `verify_batch1.py`, плагин `.opencode/plugins/graphify.js`, мусорные файлы и 4 зависимости (`groq`, `colorlog`, `Cartopy`, `scipy` — последний приходит транзитивно через MetPy). Подробности — `docs/DEAD_CODE_REPORT.md` и `PLAN.md`.
-- **Метрики**: 155 passed / 3 skipped, покрытие 71.4 % → 73.1 %, граф 761 → 747 узлов. Чистая установка `requirements.txt` и импорт `bot`/`api` проверены.
+- **Метрики**: 161 passed / 3 skipped, покрытие 73.64 %, граф 761 → 747 узлов. Чистая установка `requirements.txt` и импорт `bot`/`api` проверены.
 
 ### 2026-11-26 — SPC formula corrections (read-only audit → applied)
 - **Fixed-layer STP (`calculate_stp`)**: приведен в точное соответствие SPC (Thompson et al., begin.html): используется sbCAPE, sbLCL, SRH 0–1 км, 6BWD; CIN-член удалён (SPC fixed-STP не содержит CIN); 6BWD < 12.5 м/с → 0, > 30 м/с → cap 1.5.

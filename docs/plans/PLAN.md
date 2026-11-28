@@ -1,5 +1,7 @@
 # PLAN.md — Dead Code Elimination (батчи A→E)
 
+> structurally relocated: пути в этом историческом документе описаны до реорганизации; актуальный код находится в `stormlab/`.
+
 Статус: **ОЖИДАЕТ ОДОБРЕНИЯ ОПЕРАТОРА**. Удаления не выполнялись.
 Основание: `docs/DEAD_CODE_REPORT.md`. Baseline: **155 passed, 3 skipped**, coverage 71.4 %, граф 761 узел / 1848 рёбер (`graphify update .`, commit `96bf3c9`).
 Правило: один батч = один коммит = полный `pytest -q`. Только удаления, никаких рефакторингов.

@@ -1,5 +1,7 @@
 # Dead Code Elimination — отчёт обнаружения (StormLab)
 
+> structurally relocated: пути в этом историческом документе описаны до реорганизации; актуальный код находится в `stormlab/`.
+
 Дата: 2026-11-28. HEAD: `96bf3c9` (main). Граф пересобран из рабочего дерева (`graphify update .`, `built_at_commit=96bf3c9`).
 Baseline: **155 passed, 3 skipped** (в ТЗ указано 154 — зафиксирован фактический результат, файл `graphify-out/baseline.txt`).
 Инструменты установлены в `venv` (в `requirements.txt` не добавлялись): ruff 0.17.6, vulture 2.16, pytest-cov 7.x, pytest 9.2.0.

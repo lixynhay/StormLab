@@ -1,9 +1,9 @@
 # Persistence — дизайн замены (Batch 4, пока НЕ реализовано)
 
 ## Текущее состояние (3B)
-- `bot.py::build_application` создаёт `AtomicPicklePersistence` (graphify: `callers:build_application`).
-- `persistence.py::_dump_singlefile` пишет temp-файл → `fsync` → `os.replace`; `flush()` PTB v22 вызывает `_dump_singlefile`, семантика сохранена.
-- `bot.py` при первом старте всё ещё делает `pickle.dump({...})` в `data/persistence.pkl` (graphify: `find "pickle.dump"` → `bot.py:L805`, `persistence.py`).
+- `stormlab/bot.py::build_application` создаёт `AtomicPicklePersistence` (graphify: `callers:build_application`).
+- `stormlab/persistence.py::_dump_singlefile` пишет temp-файл → `fsync` → `os.replace`; `flush()` PTB v22 вызывает `_dump_singlefile`, семантика сохранена.
+- `stormlab/bot.py` при первом старте всё ещё делает `pickle.dump({...})` в `data/persistence.pkl` (graphify: `find "pickle.dump"` → `stormlab/bot.py:L805`, `stormlab/persistence.py`).
 -Unit-тесты `tests/test_persistence_atomic.py`: валидный файл, прерывание записи → старый файл цел, `.persist_*` не остаются. Живой рестарт оператором не проверен.
 
 ## Проблема
@@ -20,7 +20,7 @@
 | **Оставить pickle + atomic** | высокий: RCE при подмене файла | минимальная | не требуется |
 
 ## Требования к миграции
-- Скрипт `tools/migrate_persistence.py` (ещё не создан): `dry-run` по умолчанию, читает `.pkl` через `_BotUnpickler`, пишет новый формат, печатает diff ключей.
+- Скрипт `tools/migrate_stormlab/persistence.py` (ещё не создан): `dry-run` по умолчанию, читает `.pkl` через `_BotUnpickler`, пишет новый формат, печатает diff ключей.
 - Схема/ключи обязаны покрыть: `bot_data`, `chat_data`, `user_data`, `conversations`, `callback_data`.
 - Контракт сериализации: `datetime` → ISO-8601 (`datetime.isoformat()`), `tuple` → список с явной типизацией в схеме; **без pickle**.
 - Откат: новый формат не удаляет `data/persistence.pkl`, пока не пройден один полный цикл `alerts_background_task` (30 мин) и рестарт.

@@ -4,7 +4,7 @@
 
 ## F-06 — синхронные вызовы внутри async-эндпоинтов: **MAJOR → RESOLVED**
 
-**Локация:** `api.py:236` (`resolve_city`), `api.py:251-252` (`_get_fused_data`, `build_storm_report` внутри `async def get_storm_report`), `api.py:277`, `api.py:302`, `api.py:345` — синхронные сетевые/расчётные вызовы без `to_thread`. В `bot.py` часть вызовов обёрнута в `asyncio.to_thread` (например `bot.py:564-565`), но рендер Skew-T — синхронный.
+**Локация:** `stormlab/api.py:236` (`resolve_city`), `stormlab/api.py:251-252` (`_get_fused_data`, `build_storm_report` внутри `async def get_storm_report`), `stormlab/api.py:277`, `stormlab/api.py:302`, `stormlab/api.py:345` — синхронные сетевые/расчётные вызовы без `to_thread`. В `stormlab/bot.py` часть вызовов обёрнута в `asyncio.to_thread` (например `stormlab/bot.py:564-565`), но рендер Skew-T — синхронный.
 
 **Пруф (script `verify/loop_block.py`, ASGITransport, `_get_fused_data` подменён на `time.sleep(0.30)`):**
 ```
@@ -23,23 +23,23 @@ VERDICT: loop responsive
 ```
 `loop.time()` на Windows квантуется ~15.6 мс, поэтому 15/31 мс — потолок разрешения этого скрипта. Высокоточный замер `verify/health_latency.py` (`time.perf_counter`, 20 прогонов): **min 0.97 мс, median 1.03 мс, max 2.39 мс** — критерий `<10 мс` выполнен. Критерий p95 `<1000 мс` выполнен с запасом (297–313 мс).
 
-**Что сделано:** `core/async_helpers.py::run_sync` (`asyncio.to_thread`); `api.py` — `geocode`, `/api/storm`, `/api/ai-analysis` переведены на helper; `bot.py` — 5 оставшихся вызовов `build_storm_report`. Рендеры уже сериализованы существующим `_MATPLOTLIB_RENDER_LOCK` (`render/chart_builder.py:18`), новый лок не добавлялся. Регрессия: `tests/test_api_async_nonblocking.py` (3 теста), pytest 158 passed / 3 skipped, coverage 73.42 %, ruff 0. `concurrent_updates` не включался.
+**Что сделано:** `stormlab/core/async_helpers.py::run_sync` (`asyncio.to_thread`); `stormlab/api.py` — `geocode`, `/api/storm`, `/api/ai-analysis` переведены на helper; `stormlab/bot.py` — 5 оставшихся вызовов `build_storm_report`. Рендеры уже сериализованы существующим `_MATPLOTLIB_RENDER_LOCK` (`stormlab/render/chart_builder.py:18`), новый лок не добавлялся. Регрессия: `tests/test_api_async_nonblocking.py` (3 теста), pytest 158 passed / 3 skipped, coverage 73.42 %, ruff 0. `concurrent_updates` не включался.
 
 **Шаги воспроизведения:** `python graphify-out/verify/loop_block.py` и `python graphify-out/verify/health_latency.py` из корня репозитория (внешняя сеть не нужна).
 
 ## F-17 — callback_data `time:N` без проверки границ: **MINOR**
 
-**Локация:** `bot.py:596` — `time_idx = int(query.data.split(":")[1])`, затем `TIME_OFFSETS[time_idx]`.
-**Пруф:** `TIME_OFFSETS` содержит 5 элементов, генератор `_build_time_markup()` (`bot.py:193-194`) выдаёт `time:0..time:4` (6 байт, лимит 64 — OK). Значения `time:5`, `time:-1`, `time:abc` проходят парсинг и попадают в индекс без валидации → `IndexError`/`ValueError` внутри хендлера. Воспроизведение: отправить callback с таким `data` тестовому боту; AUTO-скрипт `verify/auto_checks.py` печатает список.
+**Локация:** `stormlab/bot.py:596` — `time_idx = int(query.data.split(":")[1])`, затем `TIME_OFFSETS[time_idx]`.
+**Пруф:** `TIME_OFFSETS` содержит 5 элементов, генератор `_build_time_markup()` (`stormlab/bot.py:193-194`) выдаёт `time:0..time:4` (6 байт, лимит 64 — OK). Значения `time:5`, `time:-1`, `time:abc` проходят парсинг и попадают в индекс без валидации → `IndexError`/`ValueError` внутри хендлера. Воспроизведение: отправить callback с таким `data` тестовому боту; AUTO-скрипт `verify/auto_checks.py` печатает список.
 **Рекомендация:** проверять `0 <= time_idx < len(TIME_OFFSETS)` и `data.isdigit()` перед индексацией. Не чинилось.
 
 ## F-18 — мёртвые константы в незакоммиченной правке (WIP): **MINOR / INFO**
 
-`clients/geocoding.py:14 _GEO_CACHE_TTL = 3600` и `clients/sounding_api.py:42-43 _PROBE_CACHE_MAX/_PROBE_CACHE_TTL` объявлены, но не используются (AUTO-скрипт подтвердил TTL = 3600 при работающем LRU-вытеснении). Это часть WIP оператора, не коммитов `main` — в Dead Code батчи не входило. При желании — отдельный батч.
+`stormlab/clients/geocoding.py:14 _GEO_CACHE_TTL = 3600` и `stormlab/clients/sounding_api.py:42-43 _PROBE_CACHE_MAX/_PROBE_CACHE_TTL` объявлены, но не используются (AUTO-скрипт подтвердил TTL = 3600 при работающем LRU-вытеснении). Это часть WIP оператора, не коммитов `main` — в Dead Code батчи не входило. При желании — отдельный батч.
 
 ## F-19 — потеря double-check в кэше геокодера (WIP): **INFO**
 
-В закоммиченной версии после сетевого запроса перед записью был повторный `with _GEO_LOCK: current = _GEO_CACHE.get(key)...`; в WIP его нет — запись всегда безусловна. Блокировка целостность словаря сохраняет, но два потока с одним городом могут сделать два HTTP-запроса. Пруф: `git diff` WIP vs HEAD для `clients/geocoding.py`. Не чинилось.
+В закоммиченной версии после сетевого запроса перед записью был повторный `with _GEO_LOCK: current = _GEO_CACHE.get(key)...`; в WIP его нет — запись всегда безусловна. Блокировка целостность словаря сохраняет, но два потока с одним городом могут сделать два HTTP-запроса. Пруф: `git diff` WIP vs HEAD для `stormlab/clients/geocoding.py`. Не чинилось.
 
 ## Конфликты зависимостей — **PASS**
 

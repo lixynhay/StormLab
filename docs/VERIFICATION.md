@@ -156,7 +156,7 @@ CIN-члена нет — источник расхождения для вер�
 ?? AGENTS.md
 ?? AUDIT.md
 ?? VERIFICATION.md
-?? bot.log
+?? logs/bot.log
 ?? graphify-out/
 ?? tests/test_radar_api.py
 ```
@@ -167,11 +167,11 @@ CIN-члена нет — источник расхождения для вер�
 
 ## Обновление (Batch 3A/3B, текущий снапшот)
 
-- `escape_markdown()` (`core/text_safety.py`) применяется **только к динамике**: `md(city)` в `bot.py`, поля LLM/Alert. Захардкоженные лейблы (`"🌩 STP: "`, `"📡 Радар осадков:"`) не эскейпятся. `grep -rn "escape_markdown" --include="*.py"` — `core/text_safety.py`, `bot.py` (через `md()`).
-- `Defaults(parse_mode=MarkdownV2)` в `bot.py` **нет**; AI-ответ (`analysis`) отправляется отдельным сообщением **без `parse_mode`**, после `redact_secrets(analysis)`. Заголовок `/ai` — fixed Markdown с `md(city)`.
-- OWM-ошибки логируются только через `redact_secrets(e)` (`clients/openweathermap_api.py`, `bot.py`, `api.py`); URL с `appid=` в логи не попадает.
-- `concurrent_updates=False` (`bot.py`, `Application.builder()`) — намеренно, до завершения lock-дизайна 3B.
-- `sqlite3.connect(DB_PATH)` вызывается только внутри `_connect()` в `alert_manager.py`; `prune_history()` запускается в `alerts_background_task`.
+- `escape_markdown()` (`stormlab/core/text_safety.py`) применяется **только к динамике**: `md(city)` в `stormlab/bot.py`, поля LLM/Alert. Захардкоженные лейблы (`"🌩 STP: "`, `"📡 Радар осадков:"`) не эскейпятся. `grep -rn "escape_markdown" --include="*.py"` — `stormlab/core/text_safety.py`, `stormlab/bot.py` (через `md()`).
+- `Defaults(parse_mode=MarkdownV2)` в `stormlab/bot.py` **нет**; AI-ответ (`analysis`) отправляется отдельным сообщением **без `parse_mode`**, после `redact_secrets(analysis)`. Заголовок `/ai` — fixed Markdown с `md(city)`.
+- OWM-ошибки логируются только через `redact_secrets(e)` (`stormlab/clients/openweathermap_api.py`, `stormlab/bot.py`, `stormlab/api.py`); URL с `appid=` в логи не попадает.
+- `concurrent_updates=False` (`stormlab/bot.py`, `Application.builder()`) — намеренно, до завершения lock-дизайна 3B.
+- `sqlite3.connect(DB_PATH)` вызывается только внутри `_connect()` в `stormlab/alert_manager.py`; `prune_history()` запускается в `alerts_background_task`.
 - `SPC-аудит 3A`: вышеприведённые строки про «SCP(eff) завышен / inflow layer неверен» относились к более раннему снапшоту; текущий код (`EFFECTIVE_CONSTANTS`, `find_effective_layer`, `stp_effective`, `scp_effective`) приведён к SPC mesoanalysis и покрыт pin-тестами. Конфликт двух живых SPC-страниц (SCP cap 1.0/>20 vs 1.5/>30; STP EBWD min 12.5 vs 12) задокументирован в отчёте батча.
 
 ---
@@ -180,7 +180,7 @@ CIN-члена нет — источник расхождения для вер�
 
 **Статус: НЕ ПРОВЕРЕНО ЖИВЬЁМ** — в среде агента нет Telegram-токена, реального чата, внешних LLM-ключей и нагрузки. unit-тесты зелёные (155 passed, 3 skipped), но они не заменяют §3.1–3.5.
 
-- [ ] **3.1 Живая доставка:** `/start`, `/storm <город>`, Skew-T-кнопка, AI-анализ, алерт по подписке — 5 сценариев без 500/Forbidden; `bot.log` не содержит `appid=`, `api_key=`, `token=`, `Bearer `; `escape_markdown` не ломает числа (`2.5`).
+- [ ] **3.1 Живая доставка:** `/start`, `/storm <город>`, Skew-T-кнопка, AI-анализ, алерт по подписке — 5 сценариев без 500/Forbidden; `logs/bot.log` не содержит `appid=`, `api_key=`, `token=`, `Bearer `; `escape_markdown` не ломает числа (`2.5`).
 - [ ] **3.2 Реальный Forbidden:** тестовый аккаунт блокирует бота → job удаляет подписку ровно один раз, остальные подписки обработаны, job не упал.
 - [ ] **3.3 Живая конкурентность:** 2 пользователя, 2 чата, параллельные `/storm`; без `KeyError`/`database is locked`; Skew-T/AI-контекст не перепутан по `message_id`.
 - [ ] **3.4 Persistence:** `/start` + рестарт процесса → `user_data`/`chat_data` восстановлены; нет `.persist_*` в `data/`; при `kill -9` во время `_dump_singlefile` старый файл цел, нет `pickle.UnpicklingError`.
