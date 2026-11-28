@@ -21,8 +21,8 @@ jobs:
       - uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
-      - name: Install ruff with uv
-        run: uv pip install --system ruff
+      - name: Install dev layer with uv
+        run: uv pip install --system -r requirements-dev.txt
       - name: Ruff (unused imports / locals)
         run: ruff check . --select F401,F841
 
@@ -65,10 +65,12 @@ jobs:
         run: uv --version
       # A local .venv makes `uv run` deterministic; `--system` would depend on
       # which interpreter uv discovers on a fresh runner.
-      - name: Create uv environment and install runtime dependencies
+      - name: Create uv environment and install runtime + dev dependencies
         run: |
           uv venv --python ${{ matrix.python-version }}
-          uv pip install --no-build -r requirements.txt
+          uv pip install --no-build -r requirements.txt -r requirements-dev.txt
+      - name: Dependency consistency
+        run: uv pip check
       # Baseline 73% was measured with `--cov=.` (code + tests). With
       # `--cov=stormlab` only, the same suite gives 64.43% on Python 3.11;
       # the gate is set to 64 so it reflects application code only.

@@ -116,7 +116,10 @@ uv venv --python 3.12
 ```bash
 uv pip install --no-build -r requirements.txt
 ```
-`--no-build` — бывший `--only-binary=:all:`; он не даёт MetPy/numpy компилироваться на свежих интерпретаторах. Dev-инструменты (`pytest`, `ruff`, `mypy` и др.) пока ставятся отдельно; выделение их в `requirements-dev.txt` — следующий шаг миграции.
+`--no-build` — бывший `--only-binary=:all:`; он не даёт MetPy/numpy компилироваться на свежих интерпретаторах. Dev-инструменты (`pytest`, `pytest-cov`, `ruff`, `mypy`, `bandit`, `hypothesis`, `pip-audit` и др.) вынесены в `requirements-dev.txt`:
+```bash
+uv pip install --no-build -r requirements.txt -r requirements-dev.txt
+```
 
 Все зависимости REST API (`fastapi`, `uvicorn`) уже входят в `requirements.txt` — отдельная установка не требуется.
 

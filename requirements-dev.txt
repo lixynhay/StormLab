@@ -1,0 +1,11 @@
+pytest>=9.1.1
+pytest-cov>=7.1.0
+pytest-asyncio>=1.4.0
+pytest-timeout>=1.4.0
+pytest-xdist>=3.6.0
+hypothesis>=6.130.0
+mypy>=1.18.0
+bandit>=1.8.6
+vulture>=2.14
+pip-audit>=2.9.0
+ruff>=0.13.0
